@@ -500,33 +500,6 @@ def download_college_list():
         download_name="college_exam_students.xlsx"
     )
 
-@app.route("/setup", methods=["GET", "POST"])
-def setup():
-
-    conn = get_db_connection()
-    hod = conn.execute("SELECT * FROM hods").fetchone()
-
-    if hod:
-        conn.close()
-        return "HOD already exists."
-
-    if request.method == "POST":
-        name = request.form["name"]
-        department = request.form["department"]
-        email = request.form["email"]
-        password = generate_password_hash(request.form["password"])
-
-        conn.execute(
-            "INSERT INTO hods (name, department, email, password) VALUES (?, ?, ?, ?)",
-            (name, department, email, password)
-        )
-        conn.commit()
-        conn.close()
-
-        return "HOD Created Successfully. Go to /login"
-
-    conn.close()
-    return render_template("setup.html")
 
 @app.route("/login", methods=["GET","POST"])
 def login():
