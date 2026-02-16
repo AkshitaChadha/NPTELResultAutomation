@@ -45,12 +45,7 @@
         </button>
     {% endif %}
 
-    <!-- Update Button (ALWAYS AVAILABLE) -->
-    <a href="/edit_college_marks">
-        <button class="secondary-btn">
-            Update College Marks
-        </button>
-    </a>
+    
 
 </div>
 
@@ -88,6 +83,8 @@
 {% if stage == "college_pending" and college_list|length > 0 %}
 
 <br><br>
+
+
 <h3>College Exam Students</h3>
 
 <table class="styled-table">
@@ -112,7 +109,18 @@
 <button class="secondary-btn">Download College Exam List</button>
 </a>
 
+
+
 {% endif %}
+
+<!-- Update Button (ALWAYS AVAILABLE) -->
+ <br>
+ <br>
+    <a href="/edit_college_marks">
+        <button class="primary-btn">
+            Update College Marks
+        </button>
+    </a>
 
 <br><br>
 

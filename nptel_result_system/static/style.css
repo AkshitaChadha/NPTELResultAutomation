@@ -188,3 +188,13 @@ select{
     border:none;
     border-radius:6px;
 }
+
+/* Disabled Button Styling */
+button:disabled,
+.primary-btn:disabled,
+.secondary-btn:disabled,
+.success-btn:disabled {
+    opacity: 0.5;              /* fade effect */
+    cursor: not-allowed;       /* show blocked cursor */
+    pointer-events: none;      /* prevent hover effects */
+}
