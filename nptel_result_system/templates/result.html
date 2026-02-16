@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Final Results</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<div class="navbar">
+    <h3>NPTEL Result System</h3>
+
+    <div class="nav-actions">
+        {% if session.get("role") == "TEACHER" %}
+        <a href="/teacher_dashboard">
+            <button class="secondary-btn">Dashboard</button>
+        </a>
+        {% elif session.get("role") == "HOD" %}
+        <a href="/hod_dashboard">
+            <button class="secondary-btn">Dashboard</button>
+        </a>
+        {% endif %}
+
+        <a href="/logout">
+            <button class="primary-btn">Logout</button>
+        </a>
+    </div>
+</div>
+
+<div class="container">
+
+<h2 class="page-title">Final Evaluation</h2>
+
+{% if data|length > 0 %}
+
+<div style="display:flex; gap:15px; margin-bottom:20px;">
+
+    <!-- Download Button -->
+    {% if stage == "college_done" %}
+        <a href="/download_pdf">
+            <button class="primary-btn">Download Final PDF</button>
+        </a>
+    {% else %}
+        <button class="primary-btn" disabled>
+            Download Final PDF
+        </button>
+    {% endif %}
+
+    <!-- Update Button (ALWAYS AVAILABLE) -->
+    <a href="/edit_college_marks">
+        <button class="secondary-btn">
+            Update College Marks
+        </button>
+    </a>
+
+</div>
+
+<table class="styled-table">
+<tr>
+<th>Roll</th>
+<th>Name</th>
+<th>Internal</th>
+<th>External</th>
+<th>Total</th>
+<th>Result</th>
+<th>Track</th>
+</tr>
+
+{% for row in data %}
+<tr>
+<td>{{ row["University Roll Number"] }}</td>
+<td>{{ row["Student Name"] }}</td>
+<td>{{ row.get("Internal_Final","-") }}</td>
+<td>{{ row.get("External_Final","-") }}</td>
+<td>{{ row.get("Total","-") }}</td>
+<td>{{ row.get("Result","-") }}</td>
+<td>{{ row.get("Track","-") }}</td>
+</tr>
+{% endfor %}
+
+</table>
+
+{% else %}
+<p>No data available.</p>
+{% endif %}
+
+
+<!-- Show College Section ONLY if pending -->
+{% if stage == "college_pending" and college_list|length > 0 %}
+
+<br><br>
+<h3>College Exam Students</h3>
+
+<table class="styled-table">
+<tr>
+<th>Roll</th>
+<th>Name</th>
+<th>Status</th>
+</tr>
+
+{% for row in college_list %}
+<tr>
+<td>{{ row["University Roll Number"] }}</td>
+<td>{{ row["Student Name"] }}</td>
+<td>{{ row["Result"] }}</td>
+</tr>
+{% endfor %}
+</table>
+
+<br>
+
+<a href="/download_college_list">
+<button class="secondary-btn">Download College Exam List</button>
+</a>
+
+{% endif %}
+
+<br><br>
+
+<div style="text-align:center;">
+<a href="{{ '/teacher_dashboard' if session.get('role') == 'TEACHER' else '/hod_dashboard' }}">
+<button class="secondary-btn">⬅ Back to Dashboard</button>
+</a>
+</div>
+
+</div>
+</body>
+</html>

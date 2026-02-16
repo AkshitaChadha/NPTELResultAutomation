@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>NPTEL Result System</title>
+
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+
+</head>
+
+<body>
+
+<!-- ===== NAVBAR ===== -->
+<div class="navbar">
+    <h3>NPTEL Result System</h3>
+
+    <div class="nav-actions">
+
+        {% if session.role == "HOD" %}
+            <a href="/hod_dashboard">
+                <button class="secondary-btn">Dashboard</button>
+            </a>
+        {% elif session.role == "TEACHER" %}
+            <a href="/teacher_dashboard">
+                <button class="secondary-btn">Dashboard</button>
+            </a>
+        {% endif %}
+
+        <a href="/logout">
+            <button class="primary-btn">Logout</button>
+        </a>
+
+    </div>
+</div>
+
+<div class="page-card">
+
+<h2>Upload Student Excel Sheet</h2>
+
+{% if subject %}
+<div class="subject-box">
+<h3>{{ subject["subject_name"] }} ({{ subject["subject_code"] }})</h3>
+<p>
+Semester : {{ subject["semester"] }} |
+Section : {{ subject["section"] }} |
+Branch : {{ subject["branch"] }}
+</p>
+</div>
+{% endif %}
+
+<form action="/upload" method="POST" enctype="multipart/form-data" class="form-box">
+
+<div class="form-group">
+<input type="file" name="file" class="primary-button" required>
+</div>
+
+<button class="primary-btn">Upload & Preview</button>
+
+</form>
+
+</div>
+
+
+</body>
+</html>

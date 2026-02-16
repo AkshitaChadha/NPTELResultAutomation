@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Teacher Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<!-- ===== NAVBAR ===== -->
+<div class="navbar">
+    <h3>NPTEL Result System</h3>
+
+    <div class="nav-actions">
+        <a href="/teacher_dashboard">
+            <button class="secondary-btn">Dashboard</button>
+        </a>
+
+        <a href="/logout">
+            <button class="primary-btn">Logout</button>
+        </a>
+    </div>
+</div>
+
+<div class="container">
+
+    <h2 class="page-title">Teacher Dashboard</h2>
+
+    <p class="session-label"><b>Session:</b> {{ session_label }}</p>
+
+    <h3>Your Subjects</h3>
+
+{% if branch_map %}
+
+{% for branch, semesters in branch_map.items() %}
+
+<h3 style="margin-top:30px;">Branch: {{ branch }}</h3>
+
+<table class="styled-table">
+
+<tr>
+<th>Semester</th>
+<th>Subject</th>
+<th>Action</th>
+</tr>
+
+{% for sem, subjects in semesters.items() %}
+    {% for sub in subjects %}
+    <tr>
+
+        <td>{{ sem }}</td>
+
+        <td>
+            <b>{{ sub["subject_name"] }}</b><br>
+            <small>
+                Code: {{ sub["subject_code"] }} |
+                Section: {{ sub["section"] }}
+            </small>
+        </td>
+
+        <td>
+
+        {% if sub["stage"] == "college_pending" %}
+
+            <a href="/upload?subject_id={{ sub['id'] }}">
+                <button class="primary-btn">Continue Evaluation</button>
+            </a>
+
+            <span>or</span>
+
+            <a href="/start_again/{{ sub['id'] }}">
+                <button class="primary-btn">Start Again</button>
+            </a>
+
+        {% elif sub["stage"] == "college_done" %}
+
+            <a href="/upload?subject_id={{ sub['id'] }}">
+                <button class="success-btn">View Result</button>
+            </a>
+
+            <span>or</span>
+
+            <a href="/start_again/{{ sub['id'] }}">
+                <button class="primary-btn">Start Again</button>
+            </a>
+
+        {% else %}
+
+            <a href="/upload?subject_id={{ sub['id'] }}">
+                <button class="primary-btn">Start Evaluation</button>
+            </a>
+
+        {% endif %}
+
+        </td>
+
+    </tr>
+    {% endfor %}
+{% endfor %}
+
+</table>
+
+{% endfor %}
+
+{% else %}
+<p>No subjects assigned yet.</p>
+{% endif %}
+
+</div>
+
+</body>
+</html>

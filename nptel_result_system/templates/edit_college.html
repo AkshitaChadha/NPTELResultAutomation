@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Update College External Marks</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<!-- ===== NAVBAR ===== -->
+<div class="navbar">
+    <h3>NPTEL Result System</h3>
+
+    <div class="nav-actions">
+
+        {% if session.get("role") == "HOD" %}
+        <a href="/hod_dashboard">
+            <button class="secondary-btn">Dashboard</button>
+        </a>
+        {% elif session.get("role") == "TEACHER" %}
+        <a href="/teacher_dashboard">
+            <button class="secondary-btn">Dashboard</button>
+        </a>
+        {% endif %}
+
+        <a href="/logout">
+            <button class="primary-btn">Logout</button>
+        </a>
+
+    </div>
+</div>
+
+<div class="container">
+
+<h2 class="page-title">Update College External Marks</h2>
+
+<form action="/save_college_marks" method="POST">
+
+<table class="styled-table">
+
+<tr>
+<th>Roll</th>
+<th>Name</th>
+<th>Status</th>
+<th>College Marks (Out of 100)</th>
+</tr>
+
+{% for row in data %}
+<tr>
+
+<td>
+{{ row['University Roll Number'] }}
+<input type="hidden" name="roll" value="{{ row['University Roll Number'] }}">
+</td>
+
+<td>
+{{ row['Student Name'] }}
+</td>
+
+<td>
+<select name="status_{{ row['University Roll Number'] }}"
+        onchange="toggleInput('{{ row['University Roll Number'] }}', this.value)">
+
+<option value="Present"
+{% if row.get('College_External_Raw') != 'ABSENT' %}
+selected
+{% endif %}>
+Present
+</option>
+
+<option value="ABSENT"
+{% if row.get('College_External_Raw') == 'ABSENT' %}
+selected
+{% endif %}>
+ABSENT
+</option>
+
+</select>
+</td>
+
+<td>
+<input type="text"
+       name="external_{{ row['University Roll Number'] }}"
+       id="external_{{ row['University Roll Number'] }}"
+       class="externalBox nav-cell"
+       value="{% if row.get('College_External_Raw') %}{{ row.get('College_External_Raw') }}{% endif %}"
+       {% if row.get('College_External_Raw') == 'ABSENT' %}readonly{% endif %}>
+</td>
+
+</tr>
+{% endfor %}
+
+</table>
+
+
+<br>
+<button type="submit" class="primary-btn">Save & Re-evaluate</button>
+
+</form>
+
+</div>
+
+<script>
+
+// ================= Arrow Navigation =================
+document.addEventListener("keydown", function(e) {
+
+    const active = document.activeElement;
+
+    if (!active.classList.contains("nav-cell")) return;
+
+    const cells = Array.from(document.querySelectorAll(".nav-cell"));
+    const index = cells.indexOf(active);
+
+    if (index === -1) return;
+
+    let targetIndex = null;
+
+    if (e.key === "ArrowDown") targetIndex = index + 1;
+    if (e.key === "ArrowUp") targetIndex = index - 1;
+
+    if (targetIndex !== null && cells[targetIndex]) {
+        e.preventDefault();
+        cells[targetIndex].focus();
+    }
+});
+
+
+// ================= Absentee Toggle =================
+function toggleInput(roll, value){
+
+    const input = document.getElementById("external_" + roll);
+
+    if(value === "ABSENT"){
+        input.value = "ABSENT";
+        input.readOnly = true;
+    }else{
+        input.value = "";
+        input.readOnly = false;
+    }
+}
+
+
+</script>
+
+</body>
+</html>

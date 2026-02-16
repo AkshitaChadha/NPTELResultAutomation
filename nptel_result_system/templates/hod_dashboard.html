@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>HOD Dashboard</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<!-- ================= NAVBAR ================= -->
+<div class="navbar">
+<h3>NPTEL Result System</h3>
+
+<div class="nav-actions">
+<a href="/hod_dashboard"><button class="secondary-btn">Dashboard</button></a>
+<a href="/logout"><button class="primary-btn">Logout</button></a>
+</div>
+</div>
+
+<div class="container">
+
+<h2 class="page-title">{{ hod["department"] }} Department</h2>
+
+<p><b>HOD:</b> {{ hod["name"] }}</p>
+<p><b>Session:</b> {{ session_label }}</p>
+
+<hr>
+
+<!-- ================= TEACHERS ================= -->
+<h3>Teachers</h3>
+
+{% if teachers %}
+<table class="styled-table">
+<tr>
+<th>Name</th>
+<th>Email</th>
+<th>Subjects</th>
+<th>Action</th>
+</tr>
+
+{% for teacher in teachers %}
+<tr>
+<td>{{ teacher["name"] }}</td>
+<td>{{ teacher["email"] }}</td>
+
+<td>
+{% if teacher.subjects %}
+    {% for sub in teacher.subjects %}
+        <b>{{ sub["subject_name"] }}</b>
+        ({{ sub["subject_code"] }})
+        <br>
+    {% endfor %}
+{% else %}
+    <span style="color:gray;">No Subjects Assigned</span>
+{% endif %}
+</td>
+
+<td>
+<a href="/assign_subject/{{ teacher['id'] }}">
+<button class="primary-btn">Assign Subject</button>
+</a>
+</td>
+
+</tr>
+{% endfor %}
+</table>
+{% else %}
+<p>No teachers added yet.</p>
+{% endif %}
+
+<br>
+
+<div style="text-align:left;">
+<a href="/add_teacher">
+<button class="primary-btn">+ Add Teacher</button>
+</a>
+</div>
+<br>
+
+<hr>
+
+<h3>Subjects Overview</h3>
+
+{% if branch_map %}
+
+{% for branch, semester_map in branch_map.items() %}
+
+<h4 style="margin-top:30px;">Branch: {{ branch }}</h4>
+
+<table class="styled-table">
+
+<tr>
+<th>Semester</th>
+<th>Subject</th>
+<th>Teacher</th>
+<th>Status</th>
+<th>Action</th>
+</tr>
+
+{% for sem, subject_list in semester_map.items() %}
+    {% for sub in subject_list %}
+    <tr>
+
+        <td>{{ sem }}</td>
+
+        <td>
+            <b>{{ sub["subject_name"] }}</b><br>
+            <small>
+            Code: {{ sub["subject_code"] }} |
+            Section: {{ sub["section"] }}
+            </small>
+        </td>
+
+        <td>{{ sub["teacher_name"] }}</td>
+
+        <td>
+            {% if sub["stage"] == "college_done" %}
+                <span style="color:green;">Completed</span>
+            {% elif sub["stage"] == "college_pending" %}
+                <span style="color:orange;">College Exam Pending</span>
+            {% else %}
+                <span style="color:red;">Not Started</span>
+            {% endif %}
+        </td>
+
+        <td>
+            {% if sub["evaluation_id"] %}
+                <a href="/preview_evaluation/{{ sub['evaluation_id'] }}">
+                    <button class="primary-btn">Preview</button>
+                </a>
+            {% else %}
+                <button class="secondary-btn" disabled>Preview</button>
+            {% endif %}
+        </td>
+
+    </tr>
+    {% endfor %}
+{% endfor %}
+
+</table>
+
+{% endfor %}
+
+{% else %}
+<p>No subjects assigned yet.</p>
+{% endif %}
+
+</body>
+</html>

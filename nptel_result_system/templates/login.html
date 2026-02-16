@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Login</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<!-- ===== NAVBAR ===== -->
+<div class="navbar">
+    <h3>NPTEL Result System</h3>
+</div>
+
+<!-- ===== MAIN CONTAINER ===== -->
+<div class="container" style="max-width:500px; margin-top:60px;">
+
+    <h2 class="page-title" style="text-align:center;">Login As</h2>
+
+    <form method="POST" style="margin-top:30px;">
+
+        <select name="role" class="big-input">
+            <option value="HOD">Head of Department</option>
+            <option value="TEACHER">Teacher</option>
+        </select>
+
+        <br>
+        <input name="email" placeholder="Enter Email" required class="big-input">
+
+        <br>
+        <input name="password" type="password" placeholder="Enter Password" required class="big-input">
+
+        <br>
+
+        <button class="primary-btn" style="width:100%;">
+            Login
+        </button>
+
+    </form>
+
+</div>
+
+</body>
+</html>

@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Preview Data</title>
+
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+
+</head>
+<body>
+
+<!-- ===== NAVBAR ===== -->
+<div class="navbar">
+    <h3>NPTEL Result System</h3>
+
+    <div class="nav-actions">
+
+        {% if session.role == "HOD" %}
+        <a href="/hod_dashboard">
+            <button class="secondary-btn">Dashboard</button>
+        </a>
+        {% elif session.role == "TEACHER" %}
+        <a href="/teacher_dashboard">
+            <button class="secondary-btn">Dashboard</button>
+        </a>
+        {% endif %}
+
+        <a href="/logout">
+            <button class="primary-btn">Logout</button>
+        </a>
+
+    </div>
+</div>
+
+<div class="container">
+
+<h2 class="page-title">Preview & Edit Data</h2>
+
+<form action="/evaluate" method="POST">
+
+<table class="styled-table">
+
+<tr>
+<th>Roll</th>
+<th>Name</th>
+<th>Registered</th>
+<th>Assignment</th>
+<th>NPTEL External</th>
+</tr>
+
+{% for row in data %}
+<tr>
+
+<td>
+{{ row.get("University Roll Number","") }}
+<input type="hidden" name="roll[]" value="{{ row.get('University Roll Number','') }}">
+</td>
+
+<td>
+{{ row.get("Student Name","") }}
+</td>
+
+<td>
+<select name="registered[]">
+<option value="Registered"
+{% if row.get("Registered for NPTEL")=="Registered" %}selected{% endif %}>
+Registered
+</option>
+
+<option value="Not Registered"
+{% if row.get("Registered for NPTEL")=="Not Registered" %}selected{% endif %}>
+Not Registered
+</option>
+</select>
+</td>
+
+<td>{{ row.get("Assignment Marks","") }}</td>
+
+<td>{{ row.get("NPTEL External Marks","") }}</td>
+
+</tr>
+{% endfor %}
+
+</table>
+
+<br>
+<button type="submit" class="primary-btn">Proceed to Evaluation</button>
+
+</form>
+
+</div>
+
+</body>
+</html>
