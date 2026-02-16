@@ -1,14 +1,22 @@
 # evaluator.py
-
+import math
 def custom_round(value):
+
+    # Handle NaN safely
+    if value is None or (isinstance(value, float) and math.isnan(value)):
+        return 0
+
     decimal = value - int(value)
-    if decimal < 0.5:
+
+    if decimal <= 0.4:
         return int(value)
     else:
         return int(value) + 1
 
 
+
 def evaluate_student(student):
+    
 
     external_value = str(student["NPTEL External Marks"]).strip().upper()
 

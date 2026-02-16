@@ -3,6 +3,14 @@
 <head>
 <title>Update College External Marks</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<style>
+.externalBox.faded {
+    opacity: 0.4;
+    background-color: #f2f2f2;
+    pointer-events: none;
+}
+</style>
+
 </head>
 <body>
 
@@ -82,7 +90,7 @@ ABSENT
        name="external_{{ row['University Roll Number'] }}"
        id="external_{{ row['University Roll Number'] }}"
        class="externalBox nav-cell"
-       value="{% if row.get('College_External_Raw') %}{{ row.get('College_External_Raw') }}{% endif %}"
+       value="{{ row.get('College_External_Raw', '') }}"
        {% if row.get('College_External_Raw') == 'ABSENT' %}readonly{% endif %}>
 </td>
 
@@ -133,11 +141,21 @@ function toggleInput(roll, value){
     if(value === "ABSENT"){
         input.value = "ABSENT";
         input.readOnly = true;
+        input.classList.add("faded");
     }else{
         input.value = "";
         input.readOnly = false;
+        input.classList.remove("faded");
     }
 }
+
+// Apply fade on page load for already ABSENT students
+document.querySelectorAll("select").forEach(select => {
+    if (select.value === "ABSENT") {
+        const roll = select.name.split("status_")[1];
+        toggleInput(roll, "ABSENT");
+    }
+});
 
 
 </script>

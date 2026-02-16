@@ -306,16 +306,28 @@ import json
 @app.route("/final_results")
 def final_results():
 
-    global ORIGINAL_DATA, FINAL_RESULTS
+    global ORIGINAL_DATA
 
-    FINAL_RESULTS = ORIGINAL_DATA.copy()
+    final_list = []
+    college_pending = []
+
+    for student in ORIGINAL_DATA:
+
+        # Finalised students
+        if student.get("Track") in ["College Evaluated", "NPTEL"]:
+            final_list.append(student)
+
+        # Still pending college exam
+        elif student.get("Track") == "College":
+            college_pending.append(student)
 
     return render_template(
-    "result.html",
-    data=FINAL_RESULTS,
-    college_list=[],
-    stage="college_done"
-)
+        "result.html",
+        data=final_list,
+        college_list=college_pending,
+        stage="college_pending" if college_pending else "college_done"
+    )
+
 
 
 
