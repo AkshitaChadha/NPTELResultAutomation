@@ -35,7 +35,8 @@
 <div style="display:flex; gap:15px; margin-bottom:20px;">
 
     <!-- Download Button -->
-    {% if stage == "college_done" %}
+    {% if college_list|length == 0 %}
+
         <a href="/download_pdf">
             <button class="primary-btn">Download Final PDF</button>
         </a>

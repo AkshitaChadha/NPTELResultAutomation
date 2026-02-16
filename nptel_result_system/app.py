@@ -279,11 +279,14 @@ def evaluate():
         conn.commit()
         conn.close()
 
+    stage_value = "college_done" if len(COLLEGE_LIST) == 0 else "college_pending"
+
     return render_template(
-    "result.html",
-    data=NPTEL_LIST,
-    college_list=COLLEGE_LIST,
-    stage="college_pending"
+        "result.html",
+        data=NPTEL_LIST,
+        college_list=COLLEGE_LIST,
+        stage=stage_value
+
 )
 
 
@@ -321,12 +324,15 @@ def final_results():
         elif student.get("Track") == "College":
             college_pending.append(student)
 
+    stage_value = "college_done" if len(college_pending) == 0 else "college_pending"
+
     return render_template(
         "result.html",
         data=final_list,
         college_list=college_pending,
-        stage="college_pending" if college_pending else "college_done"
+        stage=stage_value
     )
+
 
 
 
