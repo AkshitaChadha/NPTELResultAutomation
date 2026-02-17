@@ -54,8 +54,10 @@
 <tr>
 <th>Roll</th>
 <th>Name</th>
-<th>Internal</th>
-<th>External</th>
+<th>NPTEL Assignment</th>
+<th>College Internal</th>
+<th>NPTEL Exam</th>
+<th>College External</th>
 <th>Total</th>
 <th>Result</th>
 <th>Track</th>
@@ -65,7 +67,9 @@
 <tr>
 <td>{{ row["University Roll Number"] }}</td>
 <td>{{ row["Student Name"] }}</td>
+<td>{{ row["Assignment Marks"] }}</td>
 <td>{{ row.get("Internal_Final","-") }}</td>
+<td>{{ row["NPTEL External Marks"] }}</td>
 <td>{{ row.get("External_Final","-") }}</td>
 <td>{{ row.get("Total","-") }}</td>
 <td>{{ row.get("Result","-") }}</td>
