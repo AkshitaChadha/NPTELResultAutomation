@@ -44,30 +44,21 @@ def upload():
 
     global ORIGINAL_DATA, NPTEL_LIST, COLLEGE_LIST
 
-    # 🔐 Security check
     if "user_id" not in session:
         return redirect("/login")
 
-    # =========================
-    # 🔵 GET REQUEST
-    # =========================
+    # Ensure session selected
+    if "active_session_id" not in session:
+        session["session_label"] = get_current_session()
+        session["active_session_id"] = get_or_create_session(
+            session["session_label"]
+        )
+
+    active_session_id = session["active_session_id"]
+
     if request.method == "GET":
 
         subject_id = request.args.get("subject_id")
-
-        restart = request.args.get("restart")
-
-        if restart == "1":
-            conn = get_db_connection()
-            conn.execute(
-                "DELETE FROM evaluations WHERE subject_id=?",
-                (subject_id,)
-            )
-            conn.commit()
-            conn.close()
-
-            return redirect(f"/upload?subject_id={subject_id}")
-
 
         if subject_id:
             session["active_subject"] = subject_id
@@ -85,68 +76,49 @@ def upload():
             ).fetchone()
 
             evaluation = conn.execute(
-    "SELECT * FROM evaluations WHERE subject_id=?",
-    (session["active_subject"],)
-).fetchone()
-
+                "SELECT * FROM evaluations WHERE subject_id=? AND session_id=?",
+                (session["active_subject"], active_session_id)
+            ).fetchone()
 
         conn.close()
 
-        # 🔥 If evaluation exists → LOAD RESULT PAGE directly
         if evaluation:
-
             import json
-
             ORIGINAL_DATA = json.loads(evaluation["data_json"])
 
             NPTEL_LIST = []
             COLLEGE_LIST = []
 
             for student in ORIGINAL_DATA:
-
                 if student.get("Track") in ["College Evaluated", "NPTEL"]:
                     NPTEL_LIST.append(student)
-
                 elif student.get("Track") == "College":
                     COLLEGE_LIST.append(student)
 
             return render_template(
                 "result.html",
                 data=NPTEL_LIST,
-                college_list=COLLEGE_LIST
+                college_list=COLLEGE_LIST,
+                stage=evaluation["stage"]
             )
 
-        # 🔵 If no evaluation → show upload page
         return render_template("upload.html", subject=subject)
 
-    # =========================
-    # 🔴 POST REQUEST (FILE UPLOAD)
-    # =========================
-
+    # POST (file upload)
     file = request.files["file"]
     filename = file.filename.lower()
 
     if filename.endswith(".xlsx"):
         df = pd.read_excel(file, engine="openpyxl")
-
     elif filename.endswith(".csv"):
         df = pd.read_csv(file)
-
     else:
-        return "Unsupported file format. Upload .xlsx or .csv"
+        return "Unsupported file format."
 
-    # Remove accidental spaces in headers
     df.columns = df.columns.str.strip()
-
     ORIGINAL_DATA = df.to_dict(orient="records")
-        # 🔹 Normalize case-insensitive fields
-    for student in ORIGINAL_DATA:
-        if "Department" in student and student["Department"] is not None:
-            student["Department"] = str(student["Department"]).strip().upper()
-
 
     return render_template("preview.html", data=ORIGINAL_DATA)
-
 
 @app.route("/start_again/<int:subject_id>")
 def start_again(subject_id):
@@ -154,14 +126,13 @@ def start_again(subject_id):
     if "user_id" not in session:
         return redirect("/login")
 
-    from database import get_db_connection
+    active_session_id = session.get("active_session_id")
 
     conn = get_db_connection()
 
-    # delete previous evaluations for this subject
     conn.execute(
-        "DELETE FROM evaluations WHERE subject_id=?",
-        (subject_id,)
+        "DELETE FROM evaluations WHERE subject_id=? AND session_id=?",
+        (subject_id, active_session_id)
     )
 
     conn.commit()
@@ -208,8 +179,7 @@ def evaluate():
             NPTEL_LIST.append(student)
             continue
 
-        registered = str(student.get("Registered for NPTEL","")).strip().lower()
-
+        registered = str(student.get("Registered for NPTEL", "")).strip().lower()
         is_registered = registered == "registered"
 
         # ===============================
@@ -225,8 +195,8 @@ def evaluate():
         # CASE 2: REGISTERED
         # ===============================
         try:
-            assignment = float(student.get("Assignment Marks",0))
-            external = float(student.get("NPTEL External Marks",0))
+            assignment = float(student.get("Assignment Marks", 0))
+            external = float(student.get("NPTEL External Marks", 0))
         except:
             student["Track"] = "College"
             student["Result"] = "College Exam Required"
@@ -251,12 +221,15 @@ def evaluate():
             NPTEL_LIST.append(result)
 
     if subject_id:
+
         import json
         conn = get_db_connection()
 
+        active_session_id = session["active_session_id"]
+
         existing = conn.execute(
-            "SELECT id FROM evaluations WHERE subject_id=?",
-            (subject_id,)
+            "SELECT id FROM evaluations WHERE subject_id=? AND session_id=?",
+            (subject_id, active_session_id)
         ).fetchone()
 
         if existing:
@@ -265,18 +238,21 @@ def evaluate():
                 SET data_json=?,
                     stage='college_pending',
                     created_at=CURRENT_TIMESTAMP
-                WHERE subject_id=?
+                WHERE subject_id=? AND session_id=?
             """, (
                 json.dumps(ORIGINAL_DATA),
-                subject_id
+                subject_id,
+                active_session_id
             ))
         else:
             conn.execute("""
-                INSERT INTO evaluations (subject_id, teacher_id, data_json, stage)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO evaluations
+                (subject_id, teacher_id, session_id, data_json, stage)
+                VALUES (?, ?, ?, ?, ?)
             """, (
                 subject_id,
                 session["user_id"],
+                active_session_id,
                 json.dumps(ORIGINAL_DATA),
                 "college_pending"
             ))
@@ -291,8 +267,7 @@ def evaluate():
         data=NPTEL_LIST,
         college_list=COLLEGE_LIST,
         stage=stage_value
-
-)
+    )
 
 
 
@@ -470,16 +445,18 @@ def save_college_marks():
         student["Track"] = "College Evaluated"
 
     # =========================
-    # SAVE TO DATABASE (UPSERT STYLE)
+    # SAVE TO DATABASE (NO SESSION FILTER)
     # =========================
     if subject_id:
 
         import json
         conn = get_db_connection()
 
+        active_session_id = session["active_session_id"]
+
         existing = conn.execute(
-            "SELECT id FROM evaluations WHERE subject_id=?",
-            (subject_id,)
+            "SELECT id FROM evaluations WHERE subject_id=? AND session_id=?",
+            (subject_id, active_session_id)
         ).fetchone()
 
         if existing:
@@ -488,18 +465,21 @@ def save_college_marks():
                 SET data_json=?,
                     stage='college_done',
                     created_at=CURRENT_TIMESTAMP
-                WHERE subject_id=?
+                WHERE subject_id=? AND session_id=?
             """, (
                 json.dumps(ORIGINAL_DATA),
-                subject_id
+                subject_id,
+                active_session_id
             ))
         else:
             conn.execute("""
-                INSERT INTO evaluations (subject_id, teacher_id, data_json, stage)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO evaluations
+                (subject_id, teacher_id, session_id, data_json, stage)
+                VALUES (?, ?, ?, ?, ?)
             """, (
                 subject_id,
                 session["user_id"],
+                active_session_id,
                 json.dumps(ORIGINAL_DATA),
                 "college_done"
             ))
@@ -508,7 +488,6 @@ def save_college_marks():
         conn.close()
 
     return redirect(url_for("final_results"))
-
 
 @app.route("/download_college_list")
 def download_college_list():
@@ -617,27 +596,81 @@ def hod_required():
         return False
     return True
 
+# =========================
+# 🔹 Generate All Sessions (From 2022)
+# =========================
+def get_all_sessions():
+
+    from datetime import datetime
+
+    current_year = datetime.now().year
+    sessions = []
+
+    for year in range(2022, current_year + 1):
+        sessions.append(f"Jan–May {year}")
+        sessions.append(f"July–Nov {year}")
+
+    return sessions
+
+@app.route("/set_session", methods=["POST"])
+def set_session():
+
+    if not hod_required():
+        return redirect("/login")
+
+    selected_session = request.form.get("session_label")
+
+    if selected_session:
+
+        session["session_label"] = selected_session
+
+        # 🔥 Get or create real session_id
+        session_id = get_or_create_session(selected_session)
+
+        session["active_session_id"] = session_id
+
+    return redirect("/hod_dashboard")
+
+
+
 @app.route("/hod_dashboard")
 def hod_dashboard():
 
     if not hod_required():
         return redirect("/login")
 
+    # =========================
+    # 🔹 Ensure Session Selected
+    # =========================
+    if "session_label" not in session:
+        session["session_label"] = get_current_session()
+
+    if "active_session_id" not in session:
+        session["active_session_id"] = get_or_create_session(
+            session["session_label"]
+        )
+
+    session_label = session["session_label"]
+    active_session_id = session["active_session_id"]
+
     conn = get_db_connection()
 
+    # =========================
     # 🔹 HOD Info
+    # =========================
     hod = conn.execute(
         "SELECT * FROM hods WHERE id=?",
         (session["user_id"],)
     ).fetchone()
 
+    # =========================
     # 🔹 Teachers under this HOD
+    # =========================
     teachers_raw = conn.execute(
-    "SELECT * FROM teachers WHERE hod_id=?",
-    (session["user_id"],)
-).fetchall()
+        "SELECT * FROM teachers WHERE hod_id=?",
+        (session["user_id"],)
+    ).fetchall()
 
-    # Convert teachers to dict + attach subjects
     teachers = []
 
     for teacher in teachers_raw:
@@ -647,44 +680,58 @@ def hod_dashboard():
         teacher_subjects = conn.execute("""
             SELECT subject_name, subject_code
             FROM subjects
-            WHERE teacher_id=?
-        """, (teacher["id"],)).fetchall()
+            WHERE teacher_id=? AND session_id=?
+        """, (
+            teacher["id"],
+            active_session_id
+        )).fetchall()
 
         teacher_dict["subjects"] = teacher_subjects
-
         teachers.append(teacher_dict)
 
-
-    # 🔹 Subjects under this HOD (via teachers)
+    # =========================
+    # 🔹 Subjects under this HOD (SESSION FILTERED)
+    # =========================
     subjects = conn.execute("""
-    SELECT s.*, t.name as teacher_name
-    FROM subjects s
-    JOIN teachers t ON s.teacher_id = t.id
-    WHERE t.hod_id = ?
-""", (session["user_id"],)).fetchall()
+        SELECT s.*, t.name as teacher_name
+        FROM subjects s
+        JOIN teachers t ON s.teacher_id = t.id
+        WHERE t.hod_id=? AND s.session_id=?
+    """, (
+        session["user_id"],
+        active_session_id
+    )).fetchall()
 
-
+    # =========================
+    # 🔹 Latest Evaluations (SESSION FILTERED)
+    # =========================
     evaluations = conn.execute("""
-    SELECT e.id, e.subject_id, e.stage, e.created_at
-    FROM evaluations e
-    WHERE e.id IN (
-        SELECT MAX(id)
-        FROM evaluations
-        GROUP BY subject_id
-    )
-""").fetchall()
-
-
+        SELECT e.id, e.subject_id, e.stage
+        FROM evaluations e
+        WHERE e.session_id=?
+        AND e.id IN (
+            SELECT MAX(id)
+            FROM evaluations
+            WHERE session_id=?
+            GROUP BY subject_id
+        )
+    """, (
+        active_session_id,
+        active_session_id
+    )).fetchall()
 
     conn.close()
 
     # =========================
     # 🔹 Map evaluation to subject
     # =========================
-    eval_map = {ev["subject_id"]: ev for ev in evaluations}
+    eval_map = {
+        ev["subject_id"]: ev
+        for ev in evaluations
+    }
 
     # =========================
-    # 🔹 Group subjects Branch → Semester (ascending)
+    # 🔹 Group subjects Branch → Semester
     # =========================
     branch_map = {}
 
@@ -693,11 +740,9 @@ def hod_dashboard():
         branch = sub["branch"] or "Unassigned"
         semester = sub["semester"] or "Unassigned"
 
-        # Ensure branch exists
         if branch not in branch_map:
             branch_map[branch] = {}
 
-        # Ensure semester exists inside branch
         if semester not in branch_map[branch]:
             branch_map[branch][semester] = []
 
@@ -712,53 +757,61 @@ def hod_dashboard():
 
         branch_map[branch][semester].append(sub_dict)
 
-
-    # 🔹 Sort semesters numerically inside each branch
+    # 🔹 Sort semesters numerically
     for branch in branch_map:
         branch_map[branch] = dict(
-            sorted(branch_map[branch].items(), key=lambda x: int(x[0]) if str(x[0]).isdigit() else 999)
+            sorted(
+                branch_map[branch].items(),
+                key=lambda x: int(x[0]) if str(x[0]).isdigit() else 999
+            )
         )
 
-    session_label = get_current_session()
+    # =========================
+    # 🔹 Sessions for Dropdown
+    # =========================
+    all_sessions = get_all_sessions()
 
     return render_template(
         "hod_dashboard.html",
         hod=hod,
         teachers=teachers,
         branch_map=branch_map,
-        session_label=session_label
+        session_label=session_label,
+        all_sessions=all_sessions
     )
 
+def get_or_create_session(session_label):
 
-@app.route("/add_teacher", methods=["GET", "POST"])
-def add_teacher():
+    conn = get_db_connection()
 
-    if not hod_required():
-        return redirect("/login")
+    # Check if session already exists
+    existing = conn.execute(
+        "SELECT * FROM sessions WHERE label=?",
+        (session_label,)
+    ).fetchone()
 
-    if request.method == "POST":
-
-        name = request.form["name"]
-        email = request.form["email"]
-
-        from werkzeug.security import generate_password_hash
-
-        temp_password = generate_password_hash("TEMP123")
-
-        conn = get_db_connection()
-
-        conn.execute(
-    "INSERT INTO teachers (name, email, password, hod_id, is_active) VALUES (?, ?, ?, ?, ?)",
-    (name, email, temp_password, session["user_id"], 0)
-)
-
-
-        conn.commit()
+    if existing:
         conn.close()
+        return existing["id"]
 
-        return redirect("/hod_dashboard")
+    # Create new session
+    conn.execute(
+        "INSERT INTO sessions (label) VALUES (?)",
+        (session_label,)
+    )
 
-    return render_template("add_teacher.html")
+    conn.commit()
+
+    new_id = conn.execute(
+        "SELECT id FROM sessions WHERE label=?",
+        (session_label,)
+    ).fetchone()["id"]
+
+    conn.close()
+
+    return new_id
+
+
 
 @app.route("/logout")
 def logout():
@@ -815,35 +868,115 @@ def assign_subject(teacher_id):
     if not hod_required():
         return redirect("/login")
 
+    # 🔹 Ensure session selected
+    if "session_label" not in session:
+        session["session_label"] = get_current_session()
+
+    if "active_session_id" not in session:
+        session["active_session_id"] = get_or_create_session(
+            session["session_label"]
+        )
+
+    active_session_id = session["active_session_id"]
+
     conn = get_db_connection()
 
+    # 🔹 Get teacher
     teacher = conn.execute(
         "SELECT * FROM teachers WHERE id=?",
         (teacher_id,)
     ).fetchone()
 
+    if not teacher:
+        conn.close()
+        return "Teacher not found."
+
+    # 🔹 Load Subject Master
+    subjects = conn.execute(
+        "SELECT * FROM subjects_master"
+    ).fetchall()
+
+    # 🔹 Load Branches
+    branches = conn.execute(
+        "SELECT * FROM branches WHERE hod_id=?",
+        (session["user_id"],)
+    ).fetchall()
+
+    conn.close()
+
+    # =========================
+    # 🔴 POST → Save Assignment
+    # =========================
     if request.method == "POST":
 
+        subject_code = request.form.get("subject_code")
+        semester = request.form.get("semester")
+        section = request.form.get("section")
+        branch = request.form.get("branch")
+        remark = request.form.get("remark")
+
+        conn = get_db_connection()
+
+        subject_row = conn.execute(
+            "SELECT subject_name FROM subjects_master WHERE subject_code=?",
+            (subject_code,)
+        ).fetchone()
+
+        if not subject_row:
+            conn.close()
+            return "Invalid Subject Selected."
+
+        subject_name = subject_row["subject_name"]
+
+        # ✅ FIXED: INSERT WITH session_id
+        # 🔹 Ensure active session exists
+        if "active_session_id" not in session:
+            if "session_label" not in session:
+                session["session_label"] = get_current_session()
+            session["active_session_id"] = get_or_create_session(
+                session["session_label"]
+            )
+
+        active_session_id = session["active_session_id"]
+
+        # 🔥 Insert WITH session_id
         conn.execute("""
             INSERT INTO subjects
-            (subject_code, subject_name, semester, section, branch, remark, teacher_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            (subject_code, subject_name, semester, section, branch, remark, teacher_id, session_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (
-            request.form["subject_code"],
-            request.form["subject_name"],
-            request.form["semester"],
-            request.form["section"],
-            request.form["branch"],
-            request.form["remark"],
-            teacher_id   # 🔥 MUST BE THIS
+            subject_code,
+            subject_name,
+            semester,
+            section,
+            branch,
+            remark,
+            teacher_id,
+            active_session_id
         ))
+
 
         conn.commit()
         conn.close()
+
         return redirect("/hod_dashboard")
 
-    conn.close()
-    return render_template("assign_subject.html", teacher=teacher)
+    # Semester logic
+    import datetime
+    month = datetime.datetime.now().month
+
+    if 1 <= month <= 5:
+        semester_options = [2, 4, 6, 8]
+    else:
+        semester_options = [1, 3, 5, 7]
+
+    return render_template(
+        "assign_subject.html",
+        teacher=teacher,
+        subjects=subjects,
+        semester_options=semester_options,
+        branches=branches
+    )
 
 
 #teacher dashboard
@@ -854,37 +987,37 @@ def teacher_dashboard():
     if "user_id" not in session or session["role"] != "TEACHER":
         return redirect("/login")
 
+    if "session_label" not in session:
+        session["session_label"] = get_current_session()
+
+    if "active_session_id" not in session:
+        session["active_session_id"] = get_or_create_session(
+            session["session_label"]
+        )
+
+    active_session_id = session["active_session_id"]
+    session_label = session["session_label"]
+
     conn = get_db_connection()
 
-    # 🔹 Fetch subjects assigned to this teacher
     subjects = conn.execute("""
         SELECT *
         FROM subjects
-        WHERE teacher_id=?
-    """, (session["user_id"],)).fetchall()
+        WHERE teacher_id=? AND session_id=?
+    """, (
+        session["user_id"],
+        active_session_id
+    )).fetchall()
 
-    # 🔹 Fetch ONLY latest evaluation per subject (VERY IMPORTANT FIX)
     evaluations = conn.execute("""
-    SELECT e.subject_id, e.stage
-    FROM evaluations e
-    JOIN subjects s ON e.subject_id = s.id
-    WHERE s.teacher_id=?
-      AND e.id IN (
-          SELECT MAX(id)
-          FROM evaluations
-          GROUP BY subject_id
-      )
-""", (session["user_id"],)).fetchall()
-
+        SELECT id, subject_id, stage
+        FROM evaluations
+        WHERE session_id=?
+    """, (active_session_id,)).fetchall()
 
     conn.close()
 
-    # 🔹 Map subject_id → stage
-    eval_map = {ev["subject_id"]: ev["stage"] for ev in evaluations}
-
-    # =========================
-    # 🔹 Group subjects Branch → Semester
-    # =========================
+    eval_map = {ev["subject_id"]: ev for ev in evaluations}
 
     branch_map = {}
 
@@ -901,28 +1034,20 @@ def teacher_dashboard():
 
         sub_dict = dict(sub)
 
-        # Attach stage safely
-        sub_dict["stage"] = eval_map.get(sub["id"], "not_started")
+        if sub["id"] in eval_map:
+            sub_dict["stage"] = eval_map[sub["id"]]["stage"]
+            sub_dict["evaluation_id"] = eval_map[sub["id"]]["id"]
+        else:
+            sub_dict["stage"] = "not_started"
+            sub_dict["evaluation_id"] = None
 
         branch_map[branch][semester].append(sub_dict)
-
-    # 🔹 Sort semesters numerically (ascending)
-    for branch in branch_map:
-        branch_map[branch] = dict(
-            sorted(
-                branch_map[branch].items(),
-                key=lambda x: int(x[0]) if str(x[0]).isdigit() else 999
-            )
-        )
-
-    session_label = get_current_session()
 
     return render_template(
         "teacher_dashboard.html",
         branch_map=branch_map,
         session_label=session_label
     )
-
 
 
 from datetime import datetime
@@ -939,6 +1064,269 @@ def get_current_session():
         return f"July–Nov {year}"
     else:
         return f"Jan–May {year+1}"
+
+
+@app.route("/manage_subjects", methods=["GET", "POST"])
+def manage_subjects():
+
+    if not hod_required():
+        return redirect("/login")
+
+    conn = get_db_connection()
+
+    # 🔹 Manual Add
+    if request.method == "POST" and "manual_add" in request.form:
+
+        code = request.form.get("subject_code")
+        name = request.form.get("subject_name")
+
+        if code and name:
+            conn.execute(
+                "INSERT INTO subjects_master (subject_code, subject_name) VALUES (?, ?)",
+                (code.strip().upper(), name.strip())
+            )
+            conn.commit()
+
+        return redirect("/manage_subjects")
+
+    # 🔹 Excel Upload
+    if request.method == "POST" and "excel_upload" in request.form:
+
+        file = request.files.get("file")
+
+        if file and file.filename.endswith((".xlsx", ".csv")):
+
+            if file.filename.endswith(".xlsx"):
+                df = pd.read_excel(file, engine="openpyxl")
+            else:
+                df = pd.read_csv(file)
+
+            df.columns = df.columns.str.strip()
+
+            for _, row in df.iterrows():
+                code = str(row.get("subject_code", "")).strip().upper()
+                name = str(row.get("subject_name", "")).strip()
+
+                if code and name:
+                    conn.execute(
+                        "INSERT INTO subjects_master (subject_code, subject_name) VALUES (?, ?)",
+                        (code, name)
+                    )
+
+            conn.commit()
+
+        return redirect("/manage_subjects")
+
+    subjects = conn.execute(
+        "SELECT * FROM subjects_master ORDER BY subject_code"
+    ).fetchall()
+
+    conn.close()
+
+    return render_template("manage_subjects.html", subjects=subjects)
+
+
+@app.route("/delete_subject/<int:subject_id>")
+def delete_subject(subject_id):
+
+    if not hod_required():
+        return redirect("/login")
+
+    conn = get_db_connection()
+
+    conn.execute(
+        "DELETE FROM subjects_master WHERE id=?",
+        (subject_id,)
+    )
+
+    conn.commit()
+    conn.close()
+
+    return redirect("/manage_subjects")
+
+
+@app.route("/manage_branches", methods=["GET", "POST"])
+def manage_branches():
+
+    if not hod_required():
+        return redirect("/login")
+
+    conn = get_db_connection()
+
+    # Add Branch
+    if request.method == "POST":
+        branch_name = request.form.get("branch_name")
+
+        if branch_name:
+            conn.execute(
+                "INSERT INTO branches (name, hod_id) VALUES (?, ?)",
+                (branch_name.strip().upper(), session["user_id"])
+            )
+            conn.commit()
+
+        return redirect("/manage_branches")
+
+    branches = conn.execute(
+        "SELECT * FROM branches WHERE hod_id=? ORDER BY name",
+        (session["user_id"],)
+    ).fetchall()
+
+    conn.close()
+
+    return render_template("manage_branches.html", branches=branches)
+
+
+@app.route("/delete_branch/<int:branch_id>")
+def delete_branch(branch_id):
+
+    if not hod_required():
+        return redirect("/login")
+
+    conn = get_db_connection()
+
+    conn.execute(
+        "DELETE FROM branches WHERE id=? AND hod_id=?",
+        (branch_id, session["user_id"])
+    )
+
+    conn.commit()
+    conn.close()
+
+    return redirect("/manage_branches")
+
+
+@app.route("/hod_profile")
+def hod_profile():
+
+    if not hod_required():
+        return redirect("/login")
+
+    conn = get_db_connection()
+
+    # Branches
+    branches = conn.execute(
+        "SELECT * FROM branches WHERE hod_id=? ORDER BY name",
+        (session["user_id"],)
+    ).fetchall()
+
+    # Subjects Master
+    subjects = conn.execute(
+        "SELECT * FROM subjects_master ORDER BY subject_code"
+    ).fetchall()
+
+    # Teachers
+    teachers = conn.execute(
+        "SELECT * FROM teachers WHERE hod_id=? ORDER BY name",
+        (session["user_id"],)
+    ).fetchall()
+
+    conn.close()
+
+    return render_template(
+        "hod_profile.html",
+        branches=branches,
+        subjects=subjects,
+        teachers=teachers
+    )
+
+@app.route("/manage_teachers", methods=["GET", "POST"])
+def manage_teachers():
+
+    if not hod_required():
+        return redirect("/login")
+
+    conn = get_db_connection()
+
+    # Manual Add
+    if request.method == "POST" and "manual_add" in request.form:
+
+        name = request.form.get("name")
+        email = request.form.get("email")
+
+        if name and email:
+
+            temp_password = generate_password_hash("TEMP123")
+
+            conn.execute("""
+                INSERT INTO teachers (name, email, password, hod_id, is_active)
+                VALUES (?, ?, ?, ?, 0)
+            """, (
+                name.strip(),
+                email.strip(),
+                temp_password,
+                session["user_id"]
+            ))
+
+            conn.commit()
+
+        return redirect("/manage_teachers")
+
+    # Excel Upload
+    if request.method == "POST" and "excel_upload" in request.form:
+
+        file = request.files.get("file")
+
+        if file and file.filename.endswith((".xlsx", ".csv")):
+
+            if file.filename.endswith(".xlsx"):
+                df = pd.read_excel(file, engine="openpyxl")
+            else:
+                df = pd.read_csv(file)
+
+            df.columns = df.columns.str.strip()
+
+            for _, row in df.iterrows():
+
+                name = str(row.get("name", "")).strip()
+                email = str(row.get("email", "")).strip()
+
+                if name and email:
+
+                    temp_password = generate_password_hash("TEMP123")
+
+                    conn.execute("""
+                        INSERT INTO teachers (name, email, password, hod_id, is_active)
+                        VALUES (?, ?, ?, ?, 0)
+                    """, (
+                        name,
+                        email,
+                        temp_password,
+                        session["user_id"]
+                    ))
+
+            conn.commit()
+
+        return redirect("/manage_teachers")
+
+    teachers = conn.execute(
+        "SELECT * FROM teachers WHERE hod_id=? ORDER BY name",
+        (session["user_id"],)
+    ).fetchall()
+
+    conn.close()
+
+    return render_template("manage_teachers.html", teachers=teachers)
+
+
+@app.route("/delete_teacher/<int:teacher_id>")
+def delete_teacher(teacher_id):
+
+    if not hod_required():
+        return redirect("/login")
+
+    conn = get_db_connection()
+
+    conn.execute(
+        "DELETE FROM teachers WHERE id=? AND hod_id=?",
+        (teacher_id, session["user_id"])
+    )
+
+    conn.commit()
+    conn.close()
+
+    return redirect("/manage_teachers")
+
+
 
 
 from database import init_db

@@ -18,10 +18,46 @@
 
 <div class="container">
 
-<h2 class="page-title">{{ hod["department"] }} Department</h2>
+<!-- ================= HEADER SECTION ================= -->
+<div style="display:flex; justify-content:space-between; align-items:flex-start;">
 
+<div>
+<h2 class="page-title">{{ hod["department"] }} Department</h2>
 <p><b>HOD:</b> {{ hod["name"] }}</p>
-<p><b>Session:</b> {{ session_label }}</p>
+<p><b>Current Session:</b> {{ session_label }}</p>
+</div>
+
+<!-- RIGHT SIDE CONTROLS -->
+<div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+
+<!-- Session Dropdown -->
+<form method="POST" action="/set_session">
+<select name="session_label" class="session-dropdown" onchange="this.form.submit()">
+
+{% for s in all_sessions %}
+<option value="{{ s }}"
+{% if s == session_label %}selected{% endif %}>
+{{ s }}
+</option>
+{% endfor %}
+</select>
+</form>
+
+<a href="/manage_branches">
+<button class="green-btn">Branches</button>
+</a>
+
+<a href="/manage_subjects">
+<button class="green-btn">Subjects</button>
+</a>
+
+<a href="/manage_teachers">
+<button class="green-btn">Teachers</button>
+</a>
+
+</div>
+
+</div>
 
 <hr>
 
@@ -69,13 +105,9 @@
 
 <br>
 
-<div style="text-align:left;">
-<a href="/add_teacher">
-<button class="primary-btn">+ Add Teacher</button>
-</a>
-</div>
-<br>
 
+
+<br>
 <hr>
 
 <h3>Subjects Overview</h3>
@@ -144,5 +176,6 @@
 <p>No subjects assigned yet.</p>
 {% endif %}
 
+</div>
 </body>
 </html>

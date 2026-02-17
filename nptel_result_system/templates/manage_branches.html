@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Manage Branches</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<div class="navbar">
+<h3>NPTEL Result System</h3>
+<div class="nav-actions">
+<a href="/hod_dashboard"><button class="secondary-btn">Dashboard</button></a>
+<a href="/logout"><button class="primary-btn">Logout</button></a>
+</div>
+
+</div>
+
+
+
+<div class="mergecontainer">
+
+<h2 class="page-title">Manage Branches</h2>
+<br>
+
+<form method="POST" class="form-box" style="margin-bottom:20px;">
+<div class="form-group">
+<label>Branch Name</label>
+<br>
+<input name="branch_name" required>
+</div>
+<button class="primary-btn">Add Branch</button>
+</form>
+
+{% if branches %}
+<table class="styled-table">
+<tr>
+<th>Branch</th>
+<th>Action</th>
+</tr>
+
+{% for branch in branches %}
+<tr>
+<td>{{ branch["name"] }}</td>
+<td>
+<a href="/delete_branch/{{ branch['id'] }}">
+<button class="secondary-btn">Delete</button>
+</a>
+</td>
+</tr>
+{% endfor %}
+</table>
+{% else %}
+<p>No branches added yet.</p>
+{% endif %}
+
+</div>
+</body>
+</html>

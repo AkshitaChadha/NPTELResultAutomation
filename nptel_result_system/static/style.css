@@ -62,6 +62,16 @@ body{
     box-shadow:0 0 12px rgba(0,0,0,0.08);
 }
 
+.mergecontainer{
+    width:70%;
+    margin:30px auto;
+    background:white;
+    padding:25px;
+    border-radius:10px;
+    box-shadow:0 0 12px rgba(0,0,0,0.08);
+}
+
+
 /* ===== TABLE STYLE ===== */
 
 .styled-table{
@@ -197,4 +207,27 @@ button:disabled,
     opacity: 0.5;              /* fade effect */
     cursor: not-allowed;       /* show blocked cursor */
     pointer-events: none;      /* prevent hover effects */
+}
+
+.form-group label {
+    font-size: 18px;
+    font-weight: 500;
+}
+
+.form-group select {
+    font-size: 16px;
+    padding: 8px;
+}
+
+.green-btn {
+    font-size: 16px;
+    padding: 10px 15px;
+}
+
+.session-dropdown {
+    font-size: 18px;
+    padding: 8px 12px;
+    min-width: 200px;
+    height: 42px;
+    border-radius: 6px;
 }

@@ -2,19 +2,19 @@ import sqlite3
 import json
 from werkzeug.security import generate_password_hash
 
-
 def get_db_connection():
     conn = sqlite3.connect("database.db")
     conn.row_factory = sqlite3.Row
     return conn
-
 
 def init_db():
 
     conn = get_db_connection()
     cursor = conn.cursor()
 
+    # =========================
     # HODS
+    # =========================
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS hods (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -26,7 +26,9 @@ def init_db():
     )
     """)
 
+    # =========================
     # TEACHERS
+    # =========================
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS teachers (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -38,7 +40,9 @@ def init_db():
     )
     """)
 
-    # SUBJECTS
+    # =========================
+    # SUBJECTS (SESSION BASED)
+    # =========================
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS subjects (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -48,26 +52,63 @@ def init_db():
         section TEXT,
         branch TEXT,
         remark TEXT,
-        teacher_id INTEGER
+        teacher_id INTEGER,
+        session_id INTEGER
     )
     """)
 
+    # =========================
+    # SUBJECT MASTER
+    # =========================
     cursor.execute("""
-CREATE TABLE IF NOT EXISTS evaluations (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    subject_id INTEGER UNIQUE,
-    teacher_id INTEGER,
-    data_json TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    stage TEXT
-)
-""")
+    CREATE TABLE IF NOT EXISTS subjects_master (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        subject_code TEXT NOT NULL,
+        subject_name TEXT NOT NULL
+    )
+    """)
 
+    # =========================
+    # BRANCHES
+    # =========================
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS branches (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        hod_id INTEGER
+    )
+    """)
 
+    # =========================
+    # SESSIONS TABLE
+    # =========================
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        label TEXT UNIQUE NOT NULL
+    )
+    """)
+
+    # =========================
+    # EVALUATIONS (SESSION BASED)
+    # =========================
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS evaluations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        subject_id INTEGER,
+        teacher_id INTEGER,
+        session_id INTEGER,
+        data_json TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        stage TEXT
+    )
+    """)
 
     conn.commit()
 
+    # =========================
     # Load HOD config
+    # =========================
     try:
         with open("hod_config.json") as f:
             hod_list = json.load(f)

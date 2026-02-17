@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Manage Subjects</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<div class="navbar">
+<h3>NPTEL Result System</h3>
+<div class="nav-actions">
+<a href="/hod_dashboard"><button class="secondary-btn">Dashboard</button></a>
+<a href="/logout"><button class="primary-btn">Logout</button></a>
+</div>
+
+</div>
+
+<div class="mergecontainer">
+
+<h2 class="page-title">Manage Subjects</h2>
+<br>
+
+<!-- Manual Add -->
+<form method="POST" class="form-box" style="margin-bottom:20px;">
+<input type="hidden" name="manual_add" value="1">
+
+<div class="form-group">
+<label>Subject Code</label>
+<br>
+<input name="subject_code" required>
+</div>
+
+<div class="form-group">
+<label>Subject Name</label>
+<br>
+<input name="subject_name" required>
+</div>
+
+<button class="primary-btn">Add Subject</button>
+</form>
+
+<hr>
+
+<!-- Excel Upload -->
+<form method="POST" enctype="multipart/form-data" class="form-box">
+<input type="hidden" name="excel_upload" value="1">
+
+<div class="form-group">
+<label>Upload Excel (Columns: subject_code, subject_name)</label>
+<br>
+<input type="file" name="file" required>
+</div>
+
+<button class="secondary-btn">Upload</button>
+</form>
+
+
+<hr>
+
+<!-- Subject List -->
+{% if subjects %}
+<table class="styled-table">
+<tr>
+<th>Code</th>
+<th>Name</th>
+<th>Action</th>
+</tr>
+
+{% for sub in subjects %}
+<tr>
+<td>{{ sub["subject_code"] }}</td>
+<td>{{ sub["subject_name"] }}</td>
+<td>
+<a href="/delete_subject/{{ sub['id'] }}">
+<button class="secondary-btn">Delete</button>
+</a>
+</td>
+</tr>
+{% endfor %}
+</table>
+{% else %}
+<p>No subjects added yet.</p>
+{% endif %}
+
+</div>
+</body>
+</html>

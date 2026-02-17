@@ -31,51 +31,72 @@ Teacher: {{ teacher["name"] }}
 
 <br>
 
-
 <form method="POST" class="form-box grid-2">
 
+<!-- ================= SUBJECT DROPDOWN ================= -->
 <div class="form-group">
-<label>Subject Code</label>
+<label>Subject</label>
 <br>
-<input name="subject_code" required>
+<select name="subject_code" required>
+<option value="">Select Subject</option>
+
+{% for sub in subjects %}
+<option value="{{ sub['subject_code'] }}">
+    {{ sub['subject_code'] }} - {{ sub['subject_name'] }}
+</option>
+{% endfor %}
+
+</select>
 </div>
 
-<div class="form-group">
-<label>Subject Name</label>
-<br>
-<input name="subject_name" required>
-</div>
-
+<!-- ================= SEMESTER ================= -->
 <div class="form-group">
 <label>Semester</label>
 <br>
-<input name="semester">
+<select name="semester" required>
+<option value="">Select Semester</option>
+
+{% for sem in semester_options %}
+<option value="{{ sem }}">{{ sem }}</option>
+{% endfor %}
+
+</select>
 </div>
 
+<!-- ================= SECTION ================= -->
 <div class="form-group">
 <label>Section</label>
 <br>
-<input name="section">
+<select name="section" required>
+<option value="">Select Section</option>
+<option value="1">1</option>
+<option value="2">2</option>
+<option value="3">3</option>
+</select>
 </div>
 
+<!-- ================= BRANCH (DYNAMIC) ================= -->
 <div class="form-group">
 <label>Branch</label>
 <br>
-<input name="branch">
+<select name="branch" required>
+<option value="">Select Branch</option>
+
+{% for branch in branches %}
+<option value="{{ branch['name'] }}">
+    {{ branch['name'] }}
+</option>
+{% endfor %}
+
+</select>
 </div>
 
-<div class="form-group full-width">
-<label>Remark</label>
-<br>
-<textarea name="remark"></textarea>
-</div>
 
 <button class="green-btn full-width">Assign Subject</button>
 
 </form>
 
 </div>
-
 
 </body>
 </html>
