@@ -139,6 +139,11 @@ def upload():
     df.columns = df.columns.str.strip()
 
     ORIGINAL_DATA = df.to_dict(orient="records")
+        # 🔹 Normalize case-insensitive fields
+    for student in ORIGINAL_DATA:
+        if "Department" in student and student["Department"] is not None:
+            student["Department"] = str(student["Department"]).strip().upper()
+
 
     return render_template("preview.html", data=ORIGINAL_DATA)
 
@@ -340,7 +345,7 @@ def final_results():
 @app.route("/download_pdf")
 def download_pdf():
 
-    global FINAL_RESULTS
+    global ORIGINAL_DATA
 
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=pagesizes.A4)
@@ -349,15 +354,19 @@ def download_pdf():
 
     table_data = [["Roll", "Name", "Internal", "External", "Total", "Result"]]
 
-    for s in FINAL_RESULTS:
-        table_data.append([
-            s.get("University Roll Number"),
-            s.get("Student Name"),
-            s.get("Internal_Final", "-"),
-            s.get("External_Final", "-"),
-            s.get("Total", "-"),
-            s.get("Result", "-")
-        ])
+    for s in ORIGINAL_DATA:
+
+        # Include only fully evaluated students
+        if s.get("Track") in ["NPTEL", "College Evaluated"]:
+
+            table_data.append([
+                s.get("University Roll Number"),
+                s.get("Student Name"),
+                s.get("Internal_Final", "-"),
+                s.get("External_Final", "-"),
+                s.get("Total", "-"),
+                s.get("Result", "-")
+            ])
 
     table = Table(table_data)
     table.setStyle([
@@ -368,8 +377,11 @@ def download_pdf():
     doc.build(elements)
 
     buffer.seek(0)
-    return send_file(buffer, as_attachment=True, download_name="final_result.pdf")
-
+    return send_file(
+        buffer,
+        as_attachment=True,
+        download_name="final_result.pdf"
+    )
 
 @app.route("/save_college_marks", methods=["POST"])
 def save_college_marks():
