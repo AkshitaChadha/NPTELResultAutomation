@@ -6,10 +6,10 @@ from reportlab.lib import colors
 from reportlab.lib import pagesizes
 import io
 from database import init_db
-from flask import session
+from flask import session, flash
 from werkzeug.security import generate_password_hash, check_password_hash
 from database import get_db_connection
-from flask import session
+from flask import session 
 
 
 app = Flask(__name__)
@@ -82,7 +82,7 @@ def upload():
 
         conn.close()
 
-        if evaluation:
+        if evaluation and evaluation["stage"] == "college_done":
             import json
             ORIGINAL_DATA = json.loads(evaluation["data_json"])
 
@@ -99,10 +99,14 @@ def upload():
                 "result.html",
                 data=NPTEL_LIST,
                 college_list=COLLEGE_LIST,
-                stage=evaluation["stage"]
+                stage=evaluation["stage"],
+                evaluation_locked=(evaluation["locked"] == 1)
             )
 
+
         return render_template("upload.html", subject=subject)
+    
+        
 
     # POST (file upload)
     file = request.files["file"]
@@ -120,26 +124,37 @@ def upload():
 
     return render_template("preview.html", data=ORIGINAL_DATA)
 
+
 @app.route("/start_again/<int:subject_id>")
 def start_again(subject_id):
 
     if "user_id" not in session:
         return redirect("/login")
 
-    active_session_id = session.get("active_session_id")
-
+    active_session_id = session["active_session_id"]
     conn = get_db_connection()
 
-    conn.execute(
-        "DELETE FROM evaluations WHERE subject_id=? AND session_id=?",
-        (subject_id, active_session_id)
-    )
+    locked = conn.execute("""
+        SELECT locked
+        FROM evaluations
+        WHERE subject_id=? AND session_id=?
+        ORDER BY id DESC
+        LIMIT 1
+    """, (subject_id, active_session_id)).fetchone()
+
+    if locked and locked["locked"] == 1:
+        conn.close()
+        return "Marks are locked. You cannot re-evaluate."
+
+    conn.execute("""
+        DELETE FROM evaluations
+        WHERE subject_id=? AND session_id=?
+    """, (subject_id, active_session_id))
 
     conn.commit()
     conn.close()
 
     session["active_subject"] = subject_id
-
     return redirect("/upload")
 
 
@@ -610,26 +625,46 @@ def get_all_sessions():
         sessions.append(f"Jan–May {year}")
         sessions.append(f"July–Nov {year}")
 
-    return sessions
+    return list(reversed(sessions))
 
 @app.route("/set_session", methods=["POST"])
 def set_session():
 
-    if not hod_required():
+    if "user_id" not in session:
         return redirect("/login")
 
     selected_session = request.form.get("session_label")
 
     if selected_session:
-
         session["session_label"] = selected_session
+        session["active_session_id"] = get_or_create_session(selected_session)
 
-        # 🔥 Get or create real session_id
-        session_id = get_or_create_session(selected_session)
+    # 🔁 Redirect based on role
+    if session.get("role") == "HOD":
+        return redirect("/hod_dashboard")
+    else:
+        return redirect("/teacher_dashboard")
 
-        session["active_session_id"] = session_id
+@app.route("/lock_marks", methods=["POST"])
+def lock_marks():
 
-    return redirect("/hod_dashboard")
+    if "user_id" not in session or session["role"] != "TEACHER":
+        return redirect("/login")
+
+    subject_id = session.get("active_subject")
+    active_session_id = session["active_session_id"]
+
+    conn = get_db_connection()
+    conn.execute("""
+        UPDATE evaluations
+        SET locked = 1
+        WHERE subject_id=? AND session_id=?
+    """, (subject_id, active_session_id))
+
+    conn.commit()
+    conn.close()
+
+    return redirect("/teacher_dashboard")
 
 
 
@@ -780,37 +815,38 @@ def hod_dashboard():
         all_sessions=all_sessions
     )
 
-def get_or_create_session(session_label):
+def get_or_create_session(session_label, conn=None):
+    close_conn = False
 
-    conn = get_db_connection()
+    if conn is None:
+        conn = get_db_connection()
+        close_conn = True
 
-    # Check if session already exists
     existing = conn.execute(
-        "SELECT * FROM sessions WHERE label=?",
+        "SELECT id FROM sessions WHERE label=?",
         (session_label,)
     ).fetchone()
 
     if existing:
-        conn.close()
+        if close_conn:
+            conn.close()
         return existing["id"]
 
-    # Create new session
     conn.execute(
         "INSERT INTO sessions (label) VALUES (?)",
         (session_label,)
     )
 
-    conn.commit()
-
-    new_id = conn.execute(
+    session_id = conn.execute(
         "SELECT id FROM sessions WHERE label=?",
         (session_label,)
     ).fetchone()["id"]
 
-    conn.close()
+    if close_conn:
+        conn.commit()
+        conn.close()
 
-    return new_id
-
+    return session_id
 
 
 @app.route("/logout")
@@ -917,47 +953,42 @@ def assign_subject(teacher_id):
 
         conn = get_db_connection()
 
-        subject_row = conn.execute(
-            "SELECT subject_name FROM subjects_master WHERE subject_code=?",
-            (subject_code,)
-        ).fetchone()
+        try:
+            subject_row = conn.execute(
+                "SELECT subject_name FROM subjects_master WHERE subject_code=?",
+                (subject_code,)
+            ).fetchone()
 
-        if not subject_row:
-            conn.close()
-            return "Invalid Subject Selected."
+            if not subject_row:
+                return "Invalid Subject Selected."
 
-        subject_name = subject_row["subject_name"]
+            subject_name = subject_row["subject_name"]
 
-        # ✅ FIXED: INSERT WITH session_id
-        # 🔹 Ensure active session exists
-        if "active_session_id" not in session:
-            if "session_label" not in session:
-                session["session_label"] = get_current_session()
-            session["active_session_id"] = get_or_create_session(
-                session["session_label"]
+            # ✅ reuse SAME connection here
+            active_session_id = get_or_create_session(
+                session["session_label"],
+                conn
             )
 
-        active_session_id = session["active_session_id"]
+            conn.execute("""
+                INSERT INTO subjects
+                (subject_code, subject_name, semester, section, branch, remark, teacher_id, session_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                subject_code,
+                subject_name,
+                semester,
+                section,
+                branch,
+                remark,
+                teacher_id,
+                active_session_id
+            ))
 
-        # 🔥 Insert WITH session_id
-        conn.execute("""
-            INSERT INTO subjects
-            (subject_code, subject_name, semester, section, branch, remark, teacher_id, session_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            subject_code,
-            subject_name,
-            semester,
-            section,
-            branch,
-            remark,
-            teacher_id,
-            active_session_id
-        ))
+            conn.commit()
 
-
-        conn.commit()
-        conn.close()
+        finally:
+            conn.close()
 
         return redirect("/hod_dashboard")
 
@@ -1010,7 +1041,7 @@ def teacher_dashboard():
     )).fetchall()
 
     evaluations = conn.execute("""
-        SELECT id, subject_id, stage
+        SELECT id, subject_id, stage, locked
         FROM evaluations
         WHERE session_id=?
     """, (active_session_id,)).fetchall()
@@ -1035,8 +1066,9 @@ def teacher_dashboard():
         sub_dict = dict(sub)
 
         if sub["id"] in eval_map:
-            sub_dict["stage"] = eval_map[sub["id"]]["stage"]
-            sub_dict["evaluation_id"] = eval_map[sub["id"]]["id"]
+            row = eval_map[sub["id"]]
+            sub_dict["stage"] = row["stage"]
+            sub_dict["locked"] = row["locked"] if "locked" in row.keys() else 0
         else:
             sub_dict["stage"] = "not_started"
             sub_dict["evaluation_id"] = None
@@ -1044,10 +1076,12 @@ def teacher_dashboard():
         branch_map[branch][semester].append(sub_dict)
 
     return render_template(
-        "teacher_dashboard.html",
-        branch_map=branch_map,
-        session_label=session_label
-    )
+    "teacher_dashboard.html",
+    branch_map=branch_map,
+    session_label=session_label,
+    all_sessions=get_all_sessions()
+)
+
 
 
 from datetime import datetime
@@ -1158,11 +1192,12 @@ def manage_branches():
         branch_name = request.form.get("branch_name")
 
         if branch_name:
-            conn.execute(
-                "INSERT INTO branches (name, hod_id) VALUES (?, ?)",
-                (branch_name.strip().upper(), session["user_id"])
-            )
-            conn.commit()
+                conn.execute(
+                    "INSERT INTO branches (name, hod_id) VALUES (?, ?)",
+                    (branch_name.strip().upper(), session["user_id"])
+                )
+                conn.commit()
+
 
         return redirect("/manage_branches")
 
@@ -1184,13 +1219,18 @@ def delete_branch(branch_id):
 
     conn = get_db_connection()
 
-    conn.execute(
-        "DELETE FROM branches WHERE id=? AND hod_id=?",
-        (branch_id, session["user_id"])
-    )
+    try:
+        conn.execute(
+            "DELETE FROM branches WHERE id=? AND hod_id=?",
+            (branch_id, session["user_id"])
+        )
+        conn.commit()
 
-    conn.commit()
-    conn.close()
+    except Exception as e:
+        print("Delete branch error:", e)
+
+    finally:
+        conn.close()   # 🔥 ALWAYS runs
 
     return redirect("/manage_branches")
 

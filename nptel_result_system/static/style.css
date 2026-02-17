@@ -95,6 +95,30 @@ body{
 .styled-table tr:nth-child(even){
     background:#fafafa;
 }
+/* Make select and number input look identical */
+.styled-table select,
+.styled-table input[type="number"] {
+    width: 160px;          /* same width */
+    height: 40px;          /* same height */
+    padding: 6px 10px;
+    font-size: 16px;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    box-sizing: border-box;
+}
+
+/* Remove spinner arrows height mismatch */
+.styled-table input[type="number"] {
+    appearance: textfield;
+}
+
+/* Chrome / Edge */
+.styled-table input[type="number"]::-webkit-inner-spin-button,
+.styled-table input[type="number"]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
 
 /* ===== INPUTS ===== */
 
@@ -231,3 +255,45 @@ button:disabled,
     height: 42px;
     border-radius: 6px;
 }
+
+.session-select {
+    font-size: 18px;
+    padding: 8px 14px;
+    min-width: 220px;
+    border-radius: 6px;
+}
+
+.lock-text {
+    margin-left: 8px;
+    font-size: 13px;
+    color: #6b7280;
+    font-weight: 600;
+}
+
+/* Lock Marks button */
+.danger-btn {
+    background-color: #dc2626; /* red */
+    color: white;
+    border: none;
+    padding: 10px 16px;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.danger-btn:hover {
+    background-color: #b91c1c;
+}
+
+/* Locked state (disabled look) */
+.locked-btn {
+    background-color: #9ca3af; /* gray */
+    color: white;
+    border: none;
+    padding: 10px 16px;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: not-allowed;
+    opacity: 0.7;
+}
+

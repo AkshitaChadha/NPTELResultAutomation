@@ -23,11 +23,37 @@
 
 <div class="container">
 
-    <h2 class="page-title">Teacher Dashboard</h2>
+<!-- ===== HEADER SECTION (SAME AS HOD) ===== -->
+<div style="display:flex; justify-content:space-between; align-items:flex-start;">
 
-    <p class="session-label"><b>Session:</b> {{ session_label }}</p>
+    <!-- LEFT SIDE -->
+    <div>
+        <h2 class="page-title">Teacher Dashboard</h2>
+        <p><b>Current Session:</b> {{ session_label }}</p>
+    </div>
 
-    <h3>Your Subjects</h3>
+    <!-- RIGHT SIDE (SESSION DROPDOWN ONLY) -->
+    <div>
+        <form method="POST" action="/set_session">
+            <select name="session_label"
+                    onchange="this.form.submit()"
+                    class="session-select">
+                {% for s in all_sessions %}
+                <option value="{{ s }}"
+                        {% if s == session_label %}selected{% endif %}>
+                    {{ s }}
+                </option>
+                {% endfor %}
+            </select>
+        </form>
+    </div>
+
+</div>
+
+<hr>
+
+<h3>Your Subjects</h3>
+
 
 {% if branch_map %}
 
@@ -59,28 +85,27 @@
 
         <td>
 
-        {% if sub["stage"] == "college_pending" %}
+        {% if sub["stage"] == "college_done" %}
 
-            <a href="/upload?subject_id={{ sub['id'] }}">
-                <button class="primary-btn">Continue Evaluation</button>
-            </a>
-
-            <span>or</span>
-
-            <a href="/start_again/{{ sub['id'] }}">
-                <button class="primary-btn">Start Again</button>
-            </a>
-
-        {% elif sub["stage"] == "college_done" %}
-
+            <!-- View result ALWAYS allowed -->
             <a href="/upload?subject_id={{ sub['id'] }}">
                 <button class="success-btn">View Result</button>
             </a>
 
-            <span>or</span>
+            {% if sub["locked"] == 0 %}
+                <span>or</span>
+                <a href="/start_again/{{ sub['id'] }}">
+                    <button class="primary-btn">Start Again</button>
+                </a>
+            {% else %}
+                <span class="lock-text">Locked</span>
+            {% endif %}
 
-            <a href="/start_again/{{ sub['id'] }}">
-                <button class="primary-btn">Start Again</button>
+
+        {% elif sub["stage"] == "college_pending" %}
+
+            <a href="/upload?subject_id={{ sub['id'] }}">
+                <button class="primary-btn">Continue Evaluation</button>
             </a>
 
         {% else %}
@@ -90,6 +115,7 @@
             </a>
 
         {% endif %}
+
 
         </td>
 

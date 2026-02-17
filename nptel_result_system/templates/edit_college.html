@@ -41,7 +41,7 @@
 
 <h2 class="page-title">Update College External Marks</h2>
 
-<form action="/save_college_marks" method="POST">
+<form action="/save_college_marks" method="POST" onsubmit="return validateForm()">
 
 <table class="styled-table">
 
@@ -49,7 +49,7 @@
 <th>Roll</th>
 <th>Name</th>
 <th>Status</th>
-<th>College Marks (Out of 100)</th>
+<th>College Marks (Out of 60)</th>
 </tr>
 
 {% for row in data %}
@@ -86,12 +86,18 @@ ABSENT
 </td>
 
 <td>
-<input type="text"
+<input type="number"
+       min="0"
+       max="60"
+       step="1"
+       inputmode="numeric"
        name="external_{{ row['University Roll Number'] }}"
        id="external_{{ row['University Roll Number'] }}"
        class="externalBox nav-cell"
-       value="{{ row.get('College_External_Raw', '') }}"
+       value="{% if row.get('College_External_Raw') != 'ABSENT' %}{{ row.get('College_External_Raw', '') }}{% endif %}"
+       oninput="validateMarks(this)"
        {% if row.get('College_External_Raw') == 'ABSENT' %}readonly{% endif %}>
+
 </td>
 
 </tr>
@@ -156,6 +162,54 @@ document.querySelectorAll("select").forEach(select => {
         toggleInput(roll, "ABSENT");
     }
 });
+
+function validateMarks(input) {
+
+    if (input.readOnly) return;
+
+    const value = input.value;
+
+    // Remove non-numeric characters
+    if (!/^\d*$/.test(value)) {
+        input.value = value.replace(/\D/g, "");
+        return;
+    }
+
+    // Convert to number
+    const num = Number(value);
+
+    // Prevent >60
+    if (num > 60) {
+        alert("College external marks cannot be greater than 60");
+        input.value = 60;
+    }
+}
+
+function validateForm() {
+
+    const inputs = document.querySelectorAll(".externalBox");
+
+    for (let input of inputs) {
+
+        if (input.readOnly) continue;
+
+        if (input.value === "") {
+            alert("Please fill all college marks or mark ABSENT.");
+            input.focus();
+            return false;
+        }
+
+        const num = Number(input.value);
+
+        if (isNaN(num) || num < 0 || num > 60) {
+            alert("Invalid marks detected. Marks must be between 0 and 60.");
+            input.focus();
+            return false;
+        }
+    }
+
+    return true;
+}
 
 
 </script>

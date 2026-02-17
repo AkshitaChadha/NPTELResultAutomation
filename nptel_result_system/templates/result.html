@@ -46,6 +46,21 @@
         </button>
     {% endif %}
 
+    {% if stage == "college_done" %}
+        {% if not evaluation_locked %}
+            <form method="POST" action="/lock_marks">
+                <button class="danger-btn"
+                        onclick="return confirm('Once locked, marks cannot be changed. Continue?')">
+                    Lock Marks
+                </button>
+            </form>
+        {% else %}
+            <span class="lock-text">Locked</span>
+        {% endif %}
+    {% endif %}
+
+
+
     
 
 </div>
@@ -114,11 +129,18 @@
 <!-- Update Button (ALWAYS AVAILABLE) -->
  <br>
  <br>
+    {% if not evaluation_locked %}
     <a href="/edit_college_marks">
         <button class="primary-btn">
             Update College Marks
         </button>
     </a>
+    {% else %}
+    <button class="primary-btn" disabled>
+        Update College Marks
+    </button>
+    {% endif %}
+
     
     <a href="/download_college_list">
         <button class="secondary-btn">Download College Exam List</button>
