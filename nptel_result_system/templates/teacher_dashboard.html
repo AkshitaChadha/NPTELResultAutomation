@@ -3,6 +3,7 @@
 <head>
     <title>Teacher Dashboard</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    
 </head>
 <body>
 
@@ -29,7 +30,8 @@
     <!-- LEFT SIDE -->
     <div>
         <h2 class="page-title">Teacher Dashboard</h2>
-        <p><b>Current Session:</b> {{ session_label }}</p>
+       <p><b>Teacher:</b> {{ teacher["name"] }}</p>
+       <p><b>Current Session:</b> {{ session_label }}</p>
     </div>
 
     <!-- RIGHT SIDE (SESSION DROPDOWN ONLY) -->

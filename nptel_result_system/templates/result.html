@@ -46,18 +46,24 @@
         </button>
     {% endif %}
 
-    {% if stage == "college_done" %}
-        {% if not evaluation_locked %}
-            <form method="POST" action="/lock_marks">
-                <button class="danger-btn"
-                        onclick="return confirm('Once locked, marks cannot be changed. Continue?')">
-                    Lock Marks
-                </button>
-            </form>
-        {% else %}
-            <span class="lock-text">Locked</span>
-        {% endif %}
+    
+    {% if session.get("role") == "TEACHER" and stage == "college_done" %}
+
+    {% if not evaluation_locked %}
+        <form method="POST" action="/lock_marks">
+            <button class="danger-btn"
+                    onclick="return confirm('Once locked, marks cannot be changed. Continue?')">
+                Lock Marks
+            </button>
+        </form>
+    {% else %}
+        <button class="secondary-btn" disabled>
+            🔒 Locked
+        </button>
     {% endif %}
+
+{% endif %}
+
 
 
 

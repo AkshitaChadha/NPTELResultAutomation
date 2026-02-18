@@ -155,14 +155,35 @@
         </td>
 
         <td>
-            {% if sub["evaluation_id"] %}
-                <a href="/preview_evaluation/{{ sub['evaluation_id'] }}">
-                    <button class="primary-btn">Preview</button>
-                </a>
-            {% else %}
-                <button class="secondary-btn" disabled>Preview</button>
-            {% endif %}
-        </td>
+  <div style="display:flex; align-items:center; gap:12px;">
+
+    <!-- Preview -->
+    <a href="/preview_evaluation/{{ sub['evaluation_id'] }}">
+      <button class="primary-btn">Preview</button>
+    </a>
+
+    {% if sub["locked"] == 1 %}
+      <form method="GET"
+            action="/unlock_marks/{{ sub['id'] }}"
+            style="margin:0;">
+
+        <button class="primary-btn"
+                style="display:flex;
+                       align-items:center;
+                       gap:6px;
+                       background:#c0392b;">
+          🔒 Locked by Teacher
+          <span style="font-size:12px; opacity:0.9;">
+            (click to unlock)
+          </span>
+        </button>
+
+      </form>
+    {% endif %}
+
+  </div>
+</td>
+
 
     </tr>
     {% endfor %}

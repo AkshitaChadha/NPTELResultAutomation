@@ -648,7 +648,7 @@ def set_session():
 @app.route("/lock_marks", methods=["POST"])
 def lock_marks():
 
-    if "user_id" not in session or session["role"] != "TEACHER":
+    if "user_id" not in session or session.get("role") not in ["TEACHER", "HOD"]:
         return redirect("/login")
 
     subject_id = session.get("active_subject")
@@ -664,8 +664,31 @@ def lock_marks():
     conn.commit()
     conn.close()
 
-    return redirect("/teacher_dashboard")
+    if session.get("role") == "HOD":
+        return redirect("/hod_dashboard")
+    else:
+        return redirect("/teacher_dashboard")
 
+
+@app.route("/unlock_marks/<int:subject_id>")
+def unlock_marks(subject_id):
+
+    if not hod_required():
+        return redirect("/login")
+
+    active_session_id = session["active_session_id"]
+
+    conn = get_db_connection()
+    conn.execute("""
+        UPDATE evaluations
+        SET locked = 0
+        WHERE subject_id=? AND session_id=?
+    """, (subject_id, active_session_id))
+
+    conn.commit()
+    conn.close()
+
+    return redirect("/hod_dashboard")
 
 
 @app.route("/hod_dashboard")
@@ -741,7 +764,7 @@ def hod_dashboard():
     # 🔹 Latest Evaluations (SESSION FILTERED)
     # =========================
     evaluations = conn.execute("""
-        SELECT e.id, e.subject_id, e.stage
+        SELECT e.id, e.subject_id, e.stage, e.locked
         FROM evaluations e
         WHERE e.session_id=?
         AND e.id IN (
@@ -786,9 +809,11 @@ def hod_dashboard():
         if sub["id"] in eval_map:
             sub_dict["stage"] = eval_map[sub["id"]]["stage"]
             sub_dict["evaluation_id"] = eval_map[sub["id"]]["id"]
+            sub_dict["locked"] = eval_map[sub["id"]]["locked"]
         else:
             sub_dict["stage"] = "not_started"
             sub_dict["evaluation_id"] = None
+            sub_dict["locked"] = 0
 
         branch_map[branch][semester].append(sub_dict)
 
@@ -1030,6 +1055,11 @@ def teacher_dashboard():
     session_label = session["session_label"]
 
     conn = get_db_connection()
+    
+    teacher = conn.execute(
+        "SELECT name FROM teachers WHERE id=?",
+        (session["user_id"],)
+    ).fetchone()
 
     subjects = conn.execute("""
         SELECT *
@@ -1068,7 +1098,7 @@ def teacher_dashboard():
         if sub["id"] in eval_map:
             row = eval_map[sub["id"]]
             sub_dict["stage"] = row["stage"]
-            sub_dict["locked"] = row["locked"] if "locked" in row.keys() else 0
+            sub_dict["locked"] = row["locked"] if row["locked"] is not None else 0
         else:
             sub_dict["stage"] = "not_started"
             sub_dict["evaluation_id"] = None
@@ -1079,7 +1109,8 @@ def teacher_dashboard():
     "teacher_dashboard.html",
     branch_map=branch_map,
     session_label=session_label,
-    all_sessions=get_all_sessions()
+    all_sessions=get_all_sessions(),
+    teacher=teacher
 )
 
 
