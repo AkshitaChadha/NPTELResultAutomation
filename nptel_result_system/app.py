@@ -80,9 +80,8 @@ def upload():
                 (session["active_subject"], active_session_id)
             ).fetchone()
 
-        conn.close()
-
         if evaluation and evaluation["stage"] == "college_done":
+
             import json
             ORIGINAL_DATA = json.loads(evaluation["data_json"])
 
@@ -95,17 +94,36 @@ def upload():
                 elif student.get("Track") == "College":
                     COLLEGE_LIST.append(student)
 
+            # 🔵 Count partial unlock
+            unlocked_count = conn.execute("""
+                SELECT COUNT(*) as total
+                FROM evaluation_records
+                WHERE evaluation_id=? AND locked=0
+            """, (evaluation["id"],)).fetchone()["total"]
+
+            can_download = (
+                evaluation["stage"] == "college_done"
+                and evaluation["locked"] == 1
+                and unlocked_count == 0
+            )
+
+            conn.close()   # ✅ CLOSE AFTER ALL QUERIES
+
             return render_template(
                 "result.html",
                 data=NPTEL_LIST,
                 college_list=COLLEGE_LIST,
                 stage=evaluation["stage"],
-                evaluation_locked=(evaluation["locked"] == 1)
+                evaluation_locked=(evaluation["locked"] == 1),
+                unlocked_count=unlocked_count,
+                can_download=can_download,
+                evaluation_id=evaluation["id"]
             )
 
+        conn.close()   # ✅ CLOSE HERE if not returning above
 
         return render_template("upload.html", subject=subject)
-    
+
         
 
     # POST (file upload)
@@ -277,11 +295,58 @@ def evaluate():
 
     stage_value = "college_done" if len(COLLEGE_LIST) == 0 else "college_pending"
 
+    conn = get_db_connection()
+
+    row = conn.execute("""
+        SELECT locked
+        FROM evaluations
+        WHERE subject_id=? AND session_id=?
+        ORDER BY id DESC
+        LIMIT 1
+    """, (subject_id, session["active_session_id"])).fetchone()
+
+    conn.close()
+
+    evaluation_locked = row is not None and row["locked"] == 1
+
+
+    conn = get_db_connection()
+
+    evaluation = conn.execute("""
+        SELECT id, locked
+        FROM evaluations
+        WHERE subject_id=? AND session_id=?
+        ORDER BY id DESC
+        LIMIT 1
+    """, (subject_id, session["active_session_id"])).fetchone()
+
+    unlocked_count = 0
+    can_download = False
+
+    if evaluation:
+        unlocked_count = conn.execute("""
+            SELECT COUNT(*) as total
+            FROM evaluation_records
+            WHERE evaluation_id=? AND locked=0
+        """, (evaluation["id"],)).fetchone()["total"]
+
+        can_download = (
+            stage_value == "college_done"
+            and evaluation["locked"] == 1
+            and unlocked_count == 0
+        )
+
+    conn.close()
+
     return render_template(
         "result.html",
         data=NPTEL_LIST,
         college_list=COLLEGE_LIST,
-        stage=stage_value
+        stage=stage_value,
+        evaluation_locked=evaluation["locked"] == 1 if evaluation else False,
+        unlocked_count=unlocked_count,
+        can_download=can_download,
+        evaluation_id=evaluation["id"] if evaluation else None
     )
 
 
@@ -289,12 +354,45 @@ def evaluate():
 @app.route("/edit_college_marks")
 def edit_college_marks():
 
+    if "user_id" not in session or session["role"] != "TEACHER":
+        return redirect("/login")
+
+    subject_id = session.get("active_subject")
+    active_session_id = session["active_session_id"]
+
+    conn = get_db_connection()
+
+    evaluation = conn.execute("""
+        SELECT id, locked, data_json
+        FROM evaluations
+        WHERE subject_id=? AND session_id=?
+        ORDER BY id DESC
+        LIMIT 1
+    """, (subject_id, active_session_id)).fetchone()
+
+    if not evaluation:
+        conn.close()
+        return "Evaluation not found."
+
+    # 🔴 ONLY allow when fully unlocked
+    if evaluation["locked"] == 1:
+        conn.close()
+        return "Marks are locked. Cannot update."
+
+    import json
+    data = json.loads(evaluation["data_json"])
+
     college_students = [
-        s for s in ORIGINAL_DATA
+        s for s in data
         if s.get("Track") in ["College", "College Evaluated"]
     ]
 
-    return render_template("edit_college.html", data=college_students)
+    conn.close()
+
+    return render_template(
+        "edit_college.html",
+        data=college_students
+    )
 
 
 
@@ -322,33 +420,62 @@ def final_results():
     stage_value = "college_done" if len(college_pending) == 0 else "college_pending"
 
     return render_template(
-        "result.html",
-        data=final_list,
-        college_list=college_pending,
-        stage=stage_value
-    )
+    "result.html",
+    data=final_list,
+    college_list=college_pending,
+    stage=stage_value,
+    evaluation_locked=False,
+    unlocked_count=0,
+    can_download=False,
+    evaluation_id=None
+)
 
 
 
 
 
-@app.route("/download_pdf")
-def download_pdf():
+@app.route("/download_pdf/<int:eval_id>")
+def download_pdf(eval_id):
 
-    global ORIGINAL_DATA
+    if "user_id" not in session:
+        return redirect("/login")
+
+    conn = get_db_connection()
+
+    evaluation = conn.execute("""
+        SELECT *
+        FROM evaluations
+        WHERE id=?
+    """, (eval_id,)).fetchone()
+
+    if not evaluation:
+        conn.close()
+        return "Evaluation not found."
+
+    # 🔵 Count unlocked students
+    unlocked_count = conn.execute("""
+        SELECT COUNT(*) as total
+        FROM evaluation_records
+        WHERE evaluation_id=? AND locked=0
+    """, (eval_id,)).fetchone()["total"]
+
+    conn.close()
+
+    # 🔒 Allow only if fully locked AND no partial unlock
+    if evaluation["locked"] != 1 or unlocked_count > 0:
+        return "Result must be fully locked before download."
+
+    import json
+    data = json.loads(evaluation["data_json"])
 
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=pagesizes.A4)
 
     elements = []
-
     table_data = [["Roll", "Name", "Internal", "External", "Total", "Result"]]
 
-    for s in ORIGINAL_DATA:
-
-        # Include only fully evaluated students
+    for s in data:
         if s.get("Track") in ["NPTEL", "College Evaluated"]:
-
             table_data.append([
                 s.get("University Roll Number"),
                 s.get("Student Name"),
@@ -391,7 +518,7 @@ def save_college_marks():
         external_input = request.form.get(f"external_{roll}", "").strip()
 
         # =========================
-        # ABSENT CASE
+        # 🔴 ABSENT CASE
         # =========================
         if status.upper() == "ABSENT":
 
@@ -404,7 +531,7 @@ def save_college_marks():
             continue
 
         # =========================
-        # VALIDATION
+        # 🔵 VALIDATION
         # =========================
         try:
             numeric_external = float(external_input)
@@ -418,55 +545,69 @@ def save_college_marks():
 
         registered = str(student.get("Registered for NPTEL", "")).strip().lower()
 
-        # NOT REGISTERED
+        # ==================================================
+        # 🔵 STEP 1: Convert raw marks (NO ROUNDING)
+        # ==================================================
         if registered != "registered":
-
-            total_100 = numeric_external
-            internal_40 = custom_round(total_100 * 0.4)
-            external_60 = custom_round(total_100 * 0.6)
-
+            # Direct 100 mark paper
+            base_internal = numeric_external * 0.4
+            base_external = numeric_external * 0.6
         else:
-
             try:
                 assignment = float(student.get("Assignment Marks", 0))
             except:
                 assignment = 0
 
-            assignment_internal = custom_round((assignment / 25) * 40)
-            temp_total = assignment_internal + numeric_external
+            # Convert assignment 25 → 40 (NO ROUND)
+            assignment_40 = (assignment / 25) * 40
 
-            internal_40 = custom_round(temp_total * 0.4)
-            external_60 = custom_round(temp_total * 0.6)
+            # numeric_external already out of 100
+            base_internal = assignment_40
+            base_external = numeric_external
 
+        # ==================================================
+        # 🔵 STEP 2: Make combined total (OUT OF 100)
+        # ==================================================
+        combined_total = base_internal + base_external
+
+        # ==================================================
+        # 🔵 STEP 3: Re-divide 100 → 40/60 (ROUND ONLY HERE)
+        # ==================================================
+        final_internal = custom_round(combined_total * 0.4)
+        final_external = custom_round(combined_total * 0.6)
+
+        total = final_internal + final_external
+
+        # ==================================================
+        # 🔵 PASS / FAIL CHECK
+        # ==================================================
         internal_status = ""
         external_status = ""
 
-        if internal_40 < 16:
+        if final_internal < 16:
             internal_status = " (FAIL)"
 
-        if external_60 < 24:
+        if final_external < 24:
             external_status = " (FAIL)"
 
-        student["Internal_Final"] = f"{internal_40}{internal_status}"
-        student["External_Final"] = f"{external_60}{external_status}"
-        student["Total"] = internal_40 + external_60
+        student["Internal_Final"] = f"{final_internal}{internal_status}"
+        student["External_Final"] = f"{final_external}{external_status}"
+        student["Total"] = total
 
-        if internal_40 >= 16 and external_60 >= 24:
+        if final_internal >= 16 and final_external >= 24:
             student["Result"] = "PASS"
         else:
             student["Result"] = "FAIL"
 
-        # 🔥 FORCE TRACK FIX
         student["Track"] = "College Evaluated"
 
-    # =========================
-    # SAVE TO DATABASE (NO SESSION FILTER)
-    # =========================
+    # ==================================================
+    # 🔵 SAVE TO DATABASE
+    # ==================================================
     if subject_id:
 
         import json
         conn = get_db_connection()
-
         active_session_id = session["active_session_id"]
 
         existing = conn.execute(
@@ -504,6 +645,7 @@ def save_college_marks():
 
     return redirect(url_for("final_results"))
 
+
 @app.route("/download_college_list")
 def download_college_list():
 
@@ -523,8 +665,6 @@ def download_college_list():
         as_attachment=True,
         download_name="college_exam_students.xlsx"
     )
-
-
 @app.route("/login", methods=["GET","POST"])
 def login():
 
@@ -532,46 +672,146 @@ def login():
 
         email = request.form["email"]
         password = request.form["password"]
-        role = request.form["role"]
+        role = request.form.get("role")
 
         conn = get_db_connection()
 
-        if role == "HOD":
+        teacher = conn.execute(
+            "SELECT * FROM teachers WHERE email=?",
+            (email,)
+        ).fetchone()
 
-            user = conn.execute(
-                "SELECT * FROM hods WHERE email=?",
-                (email,)
-            ).fetchone()
-
-        else:
-
-            user = conn.execute(
-                "SELECT * FROM teachers WHERE email=?",
-                (email,)
-            ).fetchone()
+        hod = conn.execute(
+            "SELECT * FROM hods WHERE email=?",
+            (email,)
+        ).fetchone()
 
         conn.close()
 
-        if user and check_password_hash(user["password"], password):
+        # =========================
+        # TEACHER LOGIN
+        # =========================
+        if role == "TEACHER":
 
-            session["user_id"] = user["id"]
-            session["role"] = role
-            session.permanent = True
+            if teacher and check_password_hash(teacher["password"], password):
 
+                session["user_id"] = teacher["id"]
+                session["role"] = "TEACHER"
+                session["is_super_admin"] = False   # 🔥 IMPORTANT
+                session.permanent = True
 
-            # 🔥 Force password change
-            if user["is_active"] == 0:
-                return redirect("/change_password")
+                if teacher["is_active"] == 0:
+                    return redirect("/change_password")
 
-            # Redirect based on role
-            if role == "HOD":
-                return redirect("/hod_dashboard")
-            else:
                 return redirect("/teacher_dashboard")
 
-        return "Invalid credentials"
+            return "Invalid teacher credentials"
+
+        # =========================
+        # ADMIN LOGIN
+        # =========================
+        if role == "ADMIN":
+
+            # 🔵 Teacher promoted to admin
+            if teacher and teacher["is_admin"] == 1 \
+               and check_password_hash(teacher["password"], password):
+
+                session["user_id"] = teacher["id"]
+                session["role"] = "HOD"
+                session["is_super_admin"] = False   # 🔥 NOT super admin
+                session.permanent = True
+
+                if teacher["is_active"] == 0:
+                    return redirect("/change_password")
+
+                return redirect("/hod_dashboard")
+
+            # 🔴 Real HOD (Super Admin)
+            if hod and check_password_hash(hod["password"], password):
+
+                session["user_id"] = hod["id"]
+                session["role"] = "HOD"
+                session["is_super_admin"] = True   # 🔥 SUPER ADMIN
+                session.permanent = True
+
+                if hod["is_active"] == 0:
+                    return redirect("/change_password")
+
+                return redirect("/hod_dashboard")
+
+            return "Invalid admin credentials"
 
     return render_template("login.html")
+
+
+
+@app.route("/check_roles")
+def check_roles():
+
+    email = request.args.get("email")
+
+    conn = get_db_connection()
+
+    hod = conn.execute(
+        "SELECT id FROM hods WHERE email=?",
+        (email,)
+    ).fetchone()
+
+    teacher = conn.execute(
+        "SELECT is_admin FROM teachers WHERE email=?",
+        (email,)
+    ).fetchone()
+
+    conn.close()
+
+    roles = []
+
+    # 🔴 Real HOD (Super Admin)
+    if hod:
+        roles.append("HOD")
+
+    # 🟢 Teacher
+    if teacher:
+        roles.append("TEACHER")
+
+        # 🟡 Teacher promoted to admin
+        if teacher["is_admin"] == 1:
+            roles.append("ADMIN")
+
+    return {"roles": roles}
+
+
+@app.route("/toggle_admin/<int:teacher_id>", methods=["POST"])
+def toggle_admin(teacher_id):
+
+    if not hod_required() or not session.get("is_super_admin"):
+        return redirect("/login")
+
+
+    conn = get_db_connection()
+
+    teacher = conn.execute(
+        "SELECT is_admin FROM teachers WHERE id=? AND hod_id=?",
+        (teacher_id, session["user_id"])
+    ).fetchone()
+
+    if not teacher:
+        conn.close()
+        return redirect("/manage_teachers")
+
+    new_value = 0 if teacher["is_admin"] == 1 else 1
+
+    conn.execute(
+        "UPDATE teachers SET is_admin=? WHERE id=?",
+        (new_value, teacher_id)
+    )
+
+    conn.commit()
+    conn.close()
+
+    return redirect("/manage_teachers")
+
+
 
 @app.route("/change_password", methods=["GET","POST"])
 def change_password():
@@ -648,26 +888,54 @@ def set_session():
 @app.route("/lock_marks", methods=["POST"])
 def lock_marks():
 
-    if "user_id" not in session or session.get("role") not in ["TEACHER", "HOD"]:
+    if "user_id" not in session or session["role"] != "TEACHER":
         return redirect("/login")
 
     subject_id = session.get("active_subject")
     active_session_id = session["active_session_id"]
 
     conn = get_db_connection()
+
+    # 1️⃣ Lock master evaluation
     conn.execute("""
         UPDATE evaluations
         SET locked = 1
         WHERE subject_id=? AND session_id=?
     """, (subject_id, active_session_id))
 
+    # 2️⃣ Get evaluation_id
+    evaluation = conn.execute("""
+        SELECT id, data_json
+        FROM evaluations
+        WHERE subject_id=? AND session_id=?
+        ORDER BY id DESC
+        LIMIT 1
+    """, (subject_id, active_session_id)).fetchone()
+
+    if evaluation:
+        import json
+        data = json.loads(evaluation["data_json"])
+
+        # 3️⃣ Clear old records (if re-locking)
+        conn.execute("""
+            DELETE FROM evaluation_records
+            WHERE evaluation_id=?
+        """, (evaluation["id"],))
+
+        # 4️⃣ Insert all students as locked
+        for student in data:
+            roll = str(student.get("University Roll Number")).strip()
+
+            conn.execute("""
+                INSERT INTO evaluation_records
+                (evaluation_id, roll_no, locked)
+                VALUES (?, ?, 1)
+            """, (evaluation["id"], roll))
+
     conn.commit()
     conn.close()
 
-    if session.get("role") == "HOD":
-        return redirect("/hod_dashboard")
-    else:
-        return redirect("/teacher_dashboard")
+    return redirect("/teacher_dashboard")
 
 
 @app.route("/unlock_marks/<int:subject_id>")
@@ -679,11 +947,54 @@ def unlock_marks(subject_id):
     active_session_id = session["active_session_id"]
 
     conn = get_db_connection()
+
+    evaluation = conn.execute("""
+        SELECT id, data_json
+        FROM evaluations
+        WHERE subject_id=? AND session_id=?
+        ORDER BY id DESC
+        LIMIT 1
+    """, (subject_id, active_session_id)).fetchone()
+
+    conn.close()
+
+    if not evaluation:
+        return "Evaluation not found."
+
+    import json
+    data = json.loads(evaluation["data_json"])
+
+    return render_template(
+        "unlock_options.html",
+        evaluation_id=evaluation["id"],
+        subject_id=subject_id,
+        students=data
+    )
+
+
+@app.route("/complete_unlock", methods=["POST"])
+def complete_unlock():
+
+    if not hod_required():
+        return redirect("/login")
+
+    evaluation_id = request.form.get("evaluation_id")
+
+    conn = get_db_connection()
+
+    # Unlock master evaluation
     conn.execute("""
         UPDATE evaluations
         SET locked = 0
-        WHERE subject_id=? AND session_id=?
-    """, (subject_id, active_session_id))
+        WHERE id=?
+    """, (evaluation_id,))
+
+    # Unlock all student records
+    conn.execute("""
+        UPDATE evaluation_records
+        SET locked = 0
+        WHERE evaluation_id=?
+    """, (evaluation_id,))
 
     conn.commit()
     conn.close()
@@ -691,15 +1002,128 @@ def unlock_marks(subject_id):
     return redirect("/hod_dashboard")
 
 
+@app.route("/discard_result", methods=["POST"])
+def discard_result():
+
+    if not hod_required():
+        return redirect("/login")
+
+    subject_id = request.form.get("subject_id")
+    active_session_id = session["active_session_id"]
+
+    conn = get_db_connection()
+
+    # Get evaluation id
+    evaluation = conn.execute("""
+        SELECT id
+        FROM evaluations
+        WHERE subject_id=? AND session_id=?
+        ORDER BY id DESC
+        LIMIT 1
+    """, (subject_id, active_session_id)).fetchone()
+
+    if evaluation:
+        evaluation_id = evaluation["id"]
+
+        # Delete student records
+        conn.execute("""
+            DELETE FROM evaluation_records
+            WHERE evaluation_id=?
+        """, (evaluation_id,))
+
+        # Delete evaluation
+        conn.execute("""
+            DELETE FROM evaluations
+            WHERE id=?
+        """, (evaluation_id,))
+
+    conn.commit()
+    conn.close()
+
+    return redirect("/hod_dashboard")
+
+
+@app.route("/unlock_selected", methods=["POST"])
+def unlock_selected():
+
+    if not hod_required():
+        return redirect("/login")
+
+    evaluation_id = request.form.get("evaluation_id")
+    selected_rolls = request.form.getlist("selected_rolls")
+
+    if not selected_rolls:
+        return redirect("/hod_dashboard")
+
+    conn = get_db_connection()
+
+    for roll in selected_rolls:
+        conn.execute("""
+            UPDATE evaluation_records
+            SET locked = 0
+            WHERE evaluation_id=? AND roll_no=?
+        """, (evaluation_id, roll))
+
+    conn.commit()
+    conn.close()
+
+    return redirect("/hod_dashboard")
+
+@app.route("/edit_unlocked/<int:subject_id>")
+def edit_unlocked(subject_id):
+
+    if "user_id" not in session or session["role"] != "TEACHER":
+        return redirect("/login")
+
+    active_session_id = session["active_session_id"]
+
+    conn = get_db_connection()
+
+    evaluation = conn.execute("""
+        SELECT id, data_json
+        FROM evaluations
+        WHERE subject_id=? AND session_id=?
+        ORDER BY id DESC
+        LIMIT 1
+    """, (subject_id, active_session_id)).fetchone()
+
+    if not evaluation:
+        conn.close()
+        return "Evaluation not found."
+
+    records = conn.execute("""
+        SELECT roll_no
+        FROM evaluation_records
+        WHERE evaluation_id=? AND locked=0
+    """, (evaluation["id"],)).fetchall()
+
+    unlocked_rolls = [r["roll_no"] for r in records]
+
+    import json
+    data = json.loads(evaluation["data_json"])
+
+    # Filter only unlocked students
+    filtered_students = [
+        s for s in data
+        if str(s.get("University Roll Number")) in unlocked_rolls
+    ]
+
+    conn.close()
+
+    return render_template(
+        "edit_college.html",
+        data=filtered_students
+    )
+
 @app.route("/hod_dashboard")
 def hod_dashboard():
 
     if not hod_required():
         return redirect("/login")
 
-    # =========================
-    # 🔹 Ensure Session Selected
-    # =========================
+    # ----------------------------
+    # Ensure Session
+    # ----------------------------
     if "session_label" not in session:
         session["session_label"] = get_current_session()
 
@@ -713,17 +1137,17 @@ def hod_dashboard():
 
     conn = get_db_connection()
 
-    # =========================
-    # 🔹 HOD Info
-    # =========================
+    # ----------------------------
+    # HOD Info
+    # ----------------------------
     hod = conn.execute(
         "SELECT * FROM hods WHERE id=?",
         (session["user_id"],)
     ).fetchone()
 
-    # =========================
-    # 🔹 Teachers under this HOD
-    # =========================
+    # ----------------------------
+    # Teachers
+    # ----------------------------
     teachers_raw = conn.execute(
         "SELECT * FROM teachers WHERE hod_id=?",
         (session["user_id"],)
@@ -747,9 +1171,9 @@ def hod_dashboard():
         teacher_dict["subjects"] = teacher_subjects
         teachers.append(teacher_dict)
 
-    # =========================
-    # 🔹 Subjects under this HOD (SESSION FILTERED)
-    # =========================
+    # ----------------------------
+    # Subjects under this HOD
+    # ----------------------------
     subjects = conn.execute("""
         SELECT s.*, t.name as teacher_name
         FROM subjects s
@@ -760,37 +1184,34 @@ def hod_dashboard():
         active_session_id
     )).fetchall()
 
-    # =========================
-    # 🔹 Latest Evaluations (SESSION FILTERED)
-    # =========================
+    # ----------------------------
+    # Latest Evaluations (per subject)
+    # ----------------------------
     evaluations = conn.execute("""
-        SELECT e.id, e.subject_id, e.stage, e.locked
-        FROM evaluations e
-        WHERE e.session_id=?
-        AND e.id IN (
-            SELECT MAX(id)
-            FROM evaluations
-            WHERE session_id=?
-            GROUP BY subject_id
-        )
-    """, (
-        active_session_id,
-        active_session_id
-    )).fetchall()
+    SELECT e.id, e.subject_id, e.stage, e.locked
+    FROM evaluations e
+    WHERE e.session_id=?
+    AND e.id IN (
+        SELECT MAX(id)
+        FROM evaluations
+        WHERE session_id=?
+        GROUP BY subject_id
+    )
+""", (
+    active_session_id,
+    active_session_id
+)).fetchall()
 
-    conn.close()
 
-    # =========================
-    # 🔹 Map evaluation to subject
-    # =========================
+    # Map subject_id → evaluation row
     eval_map = {
         ev["subject_id"]: ev
         for ev in evaluations
     }
 
-    # =========================
-    # 🔹 Group subjects Branch → Semester
-    # =========================
+    # ----------------------------
+    # Build Branch → Semester Map
+    # ----------------------------
     branch_map = {}
 
     for sub in subjects:
@@ -807,17 +1228,32 @@ def hod_dashboard():
         sub_dict = dict(sub)
 
         if sub["id"] in eval_map:
-            sub_dict["stage"] = eval_map[sub["id"]]["stage"]
-            sub_dict["evaluation_id"] = eval_map[sub["id"]]["id"]
-            sub_dict["locked"] = eval_map[sub["id"]]["locked"]
+
+            ev = eval_map[sub["id"]]
+
+            sub_dict["stage"] = ev["stage"]
+            sub_dict["evaluation_id"] = ev["id"]
+            sub_dict["locked"] = ev["locked"] or 0
+
+            # 🔵 Partial unlock count
+            # Count unlocked students from evaluation_records
+            count = conn.execute("""
+                SELECT COUNT(*) as total
+                FROM evaluation_records
+                WHERE evaluation_id=? AND locked=0
+            """, (ev["id"],)).fetchone()["total"]
+
+            sub_dict["partial_unlock_count"] = count
+
         else:
             sub_dict["stage"] = "not_started"
             sub_dict["evaluation_id"] = None
             sub_dict["locked"] = 0
+            sub_dict["partial_unlock_count"] = 0
 
         branch_map[branch][semester].append(sub_dict)
 
-    # 🔹 Sort semesters numerically
+    # Sort semesters numerically
     for branch in branch_map:
         branch_map[branch] = dict(
             sorted(
@@ -826,10 +1262,9 @@ def hod_dashboard():
             )
         )
 
-    # =========================
-    # 🔹 Sessions for Dropdown
-    # =========================
     all_sessions = get_all_sessions()
+
+    conn.close()  # ✅ close only once at end
 
     return render_template(
         "hod_dashboard.html",
@@ -839,6 +1274,7 @@ def hod_dashboard():
         session_label=session_label,
         all_sessions=all_sessions
     )
+
 
 def get_or_create_session(session_label, conn=None):
     close_conn = False
@@ -895,13 +1331,20 @@ def preview_evaluation(eval_id):
         WHERE id=?
     """, (eval_id,)).fetchone()
 
-    conn.close()
-
     if not evaluation:
+        conn.close()
         return "Evaluation not found."
 
-    import json
+    # 🔵 Count partially unlocked students
+    unlocked_count = conn.execute("""
+        SELECT COUNT(*) as total
+        FROM evaluation_records
+        WHERE evaluation_id=? AND locked=0
+    """, (evaluation["id"],)).fetchone()["total"]
 
+    conn.close()
+
+    import json
     data = json.loads(evaluation["data_json"])
 
     nptel_list = []
@@ -913,14 +1356,24 @@ def preview_evaluation(eval_id):
         elif student.get("Track") == "College":
             college_list.append(student)
 
+    # ✅ FINAL download condition
+    can_download = (
+        evaluation["stage"] == "college_done"
+        and evaluation["locked"] == 1
+        and unlocked_count == 0
+    )
+
     return render_template(
-    "result.html",
-    data=nptel_list,
-    college_list=college_list,
-    stage=evaluation["stage"]
-)
+        "result.html",
+        data=nptel_list,
+        college_list=college_list,
+        stage=evaluation["stage"],
+        evaluation_locked=(evaluation["locked"] == 1),
+        unlocked_count=unlocked_count,
+        can_download=can_download,
+        evaluation_id=evaluation["id"],
 
-
+    )
 
 
 @app.route("/assign_subject/<int:teacher_id>", methods=["GET", "POST"])
@@ -1071,10 +1524,27 @@ def teacher_dashboard():
     )).fetchall()
 
     evaluations = conn.execute("""
-        SELECT id, subject_id, stage, locked
-        FROM evaluations
-        WHERE session_id=?
-    """, (active_session_id,)).fetchall()
+    SELECT id, subject_id, stage, locked
+    FROM evaluations
+    WHERE session_id=?
+""", (active_session_id,)).fetchall()
+
+
+    eval_map = {}
+    unlocked_map = {}
+
+    for ev in evaluations:
+        eval_map[ev["subject_id"]] = ev
+
+        # Count unlocked records
+        count = conn.execute("""
+            SELECT COUNT(*) as total
+            FROM evaluation_records
+            WHERE evaluation_id=? AND locked=0
+        """, (ev["id"],)).fetchone()["total"]
+
+        unlocked_map[ev["subject_id"]] = count
+
 
     conn.close()
 
@@ -1096,12 +1566,15 @@ def teacher_dashboard():
         sub_dict = dict(sub)
 
         if sub["id"] in eval_map:
-            row = eval_map[sub["id"]]
-            sub_dict["stage"] = row["stage"]
-            sub_dict["locked"] = row["locked"] if row["locked"] is not None else 0
+            sub_dict["stage"] = eval_map[sub["id"]]["stage"]
+            sub_dict["evaluation_id"] = eval_map[sub["id"]]["id"]
+            sub_dict["locked"] = eval_map[sub["id"]]["locked"]
+            sub_dict["unlocked_count"] = unlocked_map.get(sub["id"], 0)
         else:
             sub_dict["stage"] = "not_started"
             sub_dict["evaluation_id"] = None
+            sub_dict["locked"] = 0
+
 
         branch_map[branch][semester].append(sub_dict)
 
@@ -1330,7 +1803,13 @@ def manage_teachers():
 
             conn.commit()
 
-        return redirect("/manage_teachers")
+        return render_template(
+    "manage_teachers.html",
+    teachers=teachers,
+    is_super_admin=session.get("is_super_admin", False)
+
+)
+
 
     # Excel Upload
     if request.method == "POST" and "excel_upload" in request.form:
@@ -1367,7 +1846,12 @@ def manage_teachers():
 
             conn.commit()
 
-        return redirect("/manage_teachers")
+        return render_template(
+    "manage_teachers.html",
+    teachers=teachers,
+    is_super_admin=session.get("is_super_admin", False)
+)
+
 
     teachers = conn.execute(
         "SELECT * FROM teachers WHERE hod_id=? ORDER BY name",
@@ -1376,7 +1860,12 @@ def manage_teachers():
 
     conn.close()
 
-    return render_template("manage_teachers.html", teachers=teachers)
+    return render_template(
+    "manage_teachers.html",
+    teachers=teachers,
+    is_super_admin=session.get("is_super_admin", False)
+)
+
 
 
 @app.route("/delete_teacher/<int:teacher_id>")
@@ -1397,6 +1886,107 @@ def delete_teacher(teacher_id):
 
     return redirect("/manage_teachers")
 
+#download options 
+@app.route("/download_college_excel")
+def download_college_excel():
+
+    if not COLLEGE_LIST:
+        return "No college exam students available."
+
+    df = pd.DataFrame(COLLEGE_LIST)
+
+    buffer = io.BytesIO()
+    df.to_excel(buffer, index=False)
+    buffer.seek(0)
+
+    return send_file(
+        buffer,
+        as_attachment=True,
+        download_name="college_exam_students.xlsx"
+    )
+
+@app.route("/download_college_pdf")
+def download_college_pdf():
+
+    if not COLLEGE_LIST:
+        return "No college exam students available."
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=pagesizes.A4)
+
+    elements = []
+
+    table_data = [["Roll No", "Name", "Status"]]
+
+    for s in COLLEGE_LIST:
+        table_data.append([
+            s.get("University Roll Number"),
+            s.get("Student Name"),
+            s.get("Result")
+        ])
+
+    table = Table(table_data)
+    table.setStyle([('GRID', (0,0), (-1,-1), 1, colors.black)])
+
+    elements.append(table)
+    doc.build(elements)
+
+    buffer.seek(0)
+    return send_file(
+        buffer,
+        as_attachment=True,
+        download_name="college_exam_students.pdf"
+    )
+
+
+@app.route("/download_attendance_sheet")
+def download_attendance_sheet():
+
+    if not COLLEGE_LIST:
+        return "No students available."
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=pagesizes.A4)
+
+    elements = []
+
+    from reportlab.platypus import Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet
+
+    styles = getSampleStyleSheet()
+
+    # 🔥 Big Department Heading
+    elements.append(Paragraph("<b>DEPARTMENT NAME</b>", styles["Title"]))
+    elements.append(Spacer(1, 12))
+
+    elements.append(Paragraph("Semester: ___", styles["Normal"]))
+    elements.append(Paragraph("Section: ___", styles["Normal"]))
+    elements.append(Paragraph("Branch: ___", styles["Normal"]))
+    elements.append(Spacer(1, 20))
+
+    # Table
+    table_data = [["S.No", "University Roll No", "Student Name", "Signature"]]
+
+    for i, s in enumerate(COLLEGE_LIST, start=1):
+        table_data.append([
+            i,
+            s.get("University Roll Number"),
+            s.get("Student Name"),
+            ""
+        ])
+
+    table = Table(table_data, colWidths=[40, 120, 150, 120])
+    table.setStyle([('GRID', (0,0), (-1,-1), 1, colors.black)])
+
+    elements.append(table)
+    doc.build(elements)
+
+    buffer.seek(0)
+    return send_file(
+        buffer,
+        as_attachment=True,
+        download_name="attendance_sheet.pdf"
+    )
 
 
 

@@ -6,28 +6,38 @@
 </head>
 <body>
 
-<!-- ===== NAVBAR ===== -->
 <div class="navbar">
     <h3>NPTEL Result System</h3>
 </div>
 
-<!-- ===== MAIN CONTAINER ===== -->
 <div class="container" style="max-width:500px; margin-top:60px;">
 
-    <h2 class="page-title" style="text-align:center;">Login As</h2>
+    <h2 class="page-title" style="text-align:center;">Login</h2>
 
     <form method="POST" style="margin-top:30px;">
 
-        <select name="role" class="big-input">
-            <option value="HOD">Head of Department</option>
-            <option value="TEACHER">Teacher</option>
-        </select>
+        <input name="email"
+               id="email"
+               placeholder="Enter Email"
+               required
+               class="big-input">
 
         <br>
-        <input name="email" placeholder="Enter Email" required class="big-input">
+
+        <input name="password"
+               type="password"
+               placeholder="Enter Password"
+               required
+               class="big-input">
 
         <br>
-        <input name="password" type="password" placeholder="Enter Password" required class="big-input">
+
+        <!-- Role Dropdown -->
+        <select name="role"
+        id="roleSelect"
+        class="big-input">
+    <option value="TEACHER">Teacher</option>
+</select>
 
         <br>
 
@@ -38,6 +48,49 @@
     </form>
 
 </div>
+
+<script>
+document.getElementById("email").addEventListener("blur", function() {
+
+    fetch("/check_roles?email=" + this.value)
+    .then(response => response.json())
+    .then(data => {
+
+        let select = document.getElementById("roleSelect");
+        select.innerHTML = "";
+
+        // 🔴 If real HOD
+        if (data.roles.includes("HOD")) {
+
+            let superOption = document.createElement("option");
+            superOption.value = "ADMIN";
+            superOption.text = "Super Admin";
+            select.appendChild(superOption);
+
+            select.value = "ADMIN";
+            return;
+        }
+
+        // 🟢 Always add Teacher
+        let teacherOption = document.createElement("option");
+        teacherOption.value = "TEACHER";
+        teacherOption.text = "Teacher";
+        select.appendChild(teacherOption);
+
+        // 🟡 If teacher is also admin
+        if (data.roles.includes("ADMIN")) {
+
+            let adminOption = document.createElement("option");
+            adminOption.value = "ADMIN";
+            adminOption.text = "Admin";
+            select.appendChild(adminOption);
+        }
+
+    });
+
+});
+</script>
+
 
 </body>
 </html>

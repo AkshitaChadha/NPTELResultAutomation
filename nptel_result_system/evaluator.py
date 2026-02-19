@@ -16,11 +16,9 @@ def custom_round(value):
 
 
 def evaluate_student(student):
-    
 
     external_value = str(student["NPTEL External Marks"]).strip().upper()
 
-    # 🔴 External absent → send to college
     if external_value == "ABSENT":
         student["Track"] = "College"
         student["Result"] = "External Absent"
@@ -34,7 +32,7 @@ def evaluate_student(student):
         student["Result"] = "Invalid Marks"
         return student
 
-    # 🔹 Validate limits
+    # Validate limits
     if assignment < 0 or assignment > 25:
         student["Track"] = "College"
         student["Result"] = "Invalid Assignment Marks"
@@ -45,30 +43,36 @@ def evaluate_student(student):
         student["Result"] = "Invalid External Marks"
         return student
 
-    # 🔹 Convert to 40–60
-    internal_college = custom_round((assignment / 25) * 40)
-    external_college = custom_round((external / 75) * 60)
+    # ===============================
+    # 🔹 STEP 1 – Convert to 40–60
+    # ===============================
+    internal_40 = custom_round((assignment / 25) * 40)
+    external_60 = custom_round((external / 75) * 60)
 
-    total = internal_college + external_college
+    combined_total = internal_40 + external_60  # out of 100
 
-    # =========================
-    # PASS / FAIL + FAIL TAG
-    # =========================
+    # ===============================
+    # 🔹 STEP 2 – Re-divide 100 into 40–60
+    # ===============================
+    final_internal = custom_round(combined_total * 0.4)
+    final_external = custom_round(combined_total * 0.6)
+
+    total = final_internal + final_external
 
     internal_status = ""
     external_status = ""
 
-    if internal_college < 16:
+    if final_internal < 16:
         internal_status = " (FAIL)"
 
-    if external_college < 24:
+    if final_external < 24:
         external_status = " (FAIL)"
 
-    student["Internal_Final"] = f"{internal_college}{internal_status}"
-    student["External_Final"] = f"{external_college}{external_status}"
+    student["Internal_Final"] = f"{final_internal}{internal_status}"
+    student["External_Final"] = f"{final_external}{external_status}"
     student["Total"] = total
 
-    if internal_college >= 16 and external_college >= 24:
+    if final_internal >= 16 and final_external >= 24:
         student["Result"] = "PASS"
     else:
         student["Result"] = "FAIL"

@@ -34,17 +34,28 @@
 
 <div style="display:flex; gap:15px; margin-bottom:20px;">
 
-    <!-- Download Button -->
-    {% if college_list|length == 0 %}
+<!-- Download Button -->
+{% if can_download %}
 
-        <a href="/download_pdf">
-            <button class="primary-btn">Download Final PDF</button>
-        </a>
-    {% else %}
-        <button class="primary-btn" disabled>
-            Download Final PDF
+    <a href="/download_pdf/{{ evaluation_id }}">
+        <button class="primary-btn">
+            Download Final Result
         </button>
-    {% endif %}
+    </a>
+
+{% else %}
+
+    <button class="primary-btn"
+            style="background:#bdc3c7;
+                   opacity:0.6;
+                   cursor:not-allowed;"
+            disabled>
+        Download Final Result
+    </button>
+
+{% endif %}
+
+
 
     
     {% if session.get("role") == "TEACHER" and stage == "college_done" %}
@@ -135,22 +146,80 @@
 <!-- Update Button (ALWAYS AVAILABLE) -->
  <br>
  <br>
-    {% if not evaluation_locked %}
+    {% if session.get("role") == "TEACHER"
+      and stage == "college_pending"
+      and not evaluation_locked %}
+
     <a href="/edit_college_marks">
         <button class="primary-btn">
             Update College Marks
         </button>
     </a>
-    {% else %}
-    <button class="primary-btn" disabled>
-        Update College Marks
-    </button>
-    {% endif %}
+
+{% endif %}
 
     
-    <a href="/download_college_list">
-        <button class="secondary-btn">Download College Exam List</button>
-    </a>
+   {% if not evaluation_locked %}
+
+    <button class="secondary-btn" onclick="openDownloadModal()">
+        Download College Exam List
+    </button>
+
+{% endif %}
+
+<!-- Modal -->
+<div id="downloadModal" class="modal">
+  <div class="modal-content" style="text-align:center; width:320px;">
+
+    <h3 style="margin-bottom:25px;">Select Download Format</h3>
+
+    <div style="
+        display:flex;
+        flex-direction:column;
+        gap:15px;
+        margin-bottom:20px;
+    ">
+
+      <a href="/download_college_excel" style="width:100%;">
+          <button class="primary-btn" style="width:100%;">
+              Download as Excel
+          </button>
+      </a>
+
+      <a href="/download_college_pdf" style="width:100%;">
+          <button class="primary-btn" style="width:100%;">
+              Download as PDF
+          </button>
+      </a>
+
+      <a href="/download_attendance_sheet" style="width:100%;">
+          <button class="primary-btn" style="width:100%;">
+              Download Attendance Sheet
+          </button>
+      </a>
+
+    </div>
+
+    <button class="secondary-btn"
+            style="width:100%;"
+            onclick="closeDownloadModal()">
+        Cancel
+    </button>
+
+  </div>
+</div>
+
+
+<script>
+function openDownloadModal() {
+    document.getElementById("downloadModal").style.display = "flex";
+}
+
+function closeDownloadModal() {
+    document.getElementById("downloadModal").style.display = "none";
+}
+</script>
+
 
 <br><br>
 

@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Unlock Options</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<div class="navbar">
+    <h3>NPTEL Result System</h3>
+    <div class="nav-actions">
+        <a href="/hod_dashboard">
+            <button class="secondary-btn">Dashboard</button>
+        </a>
+        <a href="/logout">
+            <button class="primary-btn">Logout</button>
+        </a>
+    </div>
+</div>
+
+<div class="container">
+
+<h2 class="page-title">Unlock Options</h2>
+
+<!-- OPTION 1: COMPLETE UNLOCK -->
+<form method="POST" action="/complete_unlock">
+    <input type="hidden" name="evaluation_id" value="{{ evaluation_id }}">
+    <button class="primary-btn" style="margin-bottom:15px;">
+        Complete Unlock
+    </button>
+</form>
+
+<!-- OPTION 2: DISCARD RESULT -->
+<form method="POST" action="/discard_result">
+    <input type="hidden" name="subject_id" value="{{ subject_id }}">
+    <button class="danger-btn" style="margin-bottom:25px;"
+            onclick="return confirm('This will delete the entire evaluation. Continue?')">
+        Discard Result (Restart Evaluation)
+    </button>
+</form>
+
+<hr>
+
+<h3>Unlock Specific Students</h3>
+
+<form method="POST" action="/unlock_selected">
+    <input type="hidden" name="evaluation_id" value="{{ evaluation_id }}">
+
+    <input type="text" id="searchBox" placeholder="Search by Roll Number..."
+           style="margin-bottom:15px; padding:6px; width:250px;">
+
+    <table class="styled-table" id="studentTable">
+        <tr>
+            <th>Select</th>
+            <th>Roll</th>
+            <th>Name</th>
+        </tr>
+
+        {% for student in students %}
+        <tr>
+            <td>
+                <input type="checkbox"
+                       name="selected_rolls"
+                       value="{{ student['University Roll Number'] }}">
+            </td>
+            <td>{{ student['University Roll Number'] }}</td>
+            <td>{{ student['Student Name'] }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+
+    <br>
+    <button type="submit" class="primary-btn">
+        Unlock Selected Records
+    </button>
+</form>
+
+</div>
+
+<script>
+document.getElementById("searchBox").addEventListener("keyup", function() {
+    const value = this.value.toLowerCase();
+    const rows = document.querySelectorAll("#studentTable tr");
+
+    rows.forEach((row, index) => {
+        if (index === 0) return; // skip header
+
+        const roll = row.cells[1].textContent.toLowerCase();
+
+        row.style.display = roll.includes(value) ? "" : "none";
+    });
+});
+</script>
+
+</body>
+</html>

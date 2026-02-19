@@ -297,3 +297,27 @@ button:disabled,
     opacity: 0.7;
 }
 
+
+
+.modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.4);
+    justify-content: center;
+    align-items: center;
+}
+
+.modal-content {
+    background: white;
+    padding: 30px;
+    border-radius: 10px;
+    text-align: center;
+    width: 300px;
+}
+
+.yellow-btn {
+    background:#ffc107;
+    color: black;
+    pointer-events:none;
+}

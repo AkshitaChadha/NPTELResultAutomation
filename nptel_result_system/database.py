@@ -38,13 +38,14 @@ def init_db():
     # =========================
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS teachers (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        email TEXT UNIQUE NOT NULL,
-        password TEXT NOT NULL,
-        hod_id INTEGER NOT NULL,
-        is_active INTEGER DEFAULT 0
-    )
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    email TEXT UNIQUE NOT NULL,
+    password TEXT NOT NULL,
+    hod_id INTEGER NOT NULL,
+    is_active INTEGER DEFAULT 0,
+    is_admin INTEGER DEFAULT 0   -- NEW
+)
     """)
 
     # =========================
@@ -106,18 +107,33 @@ def init_db():
     # =========================
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS evaluations (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        subject_id INTEGER NOT NULL,
-        teacher_id INTEGER NOT NULL,
-        session_id INTEGER NOT NULL,
-        data_json TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        stage TEXT,
-        locked INTEGER DEFAULT 0
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    subject_id INTEGER,
+    teacher_id INTEGER,
+    session_id INTEGER,
+    data_json TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    stage TEXT,
+    locked INTEGER DEFAULT 0,
+    unlocked_rolls TEXT
+
     )
     """)
 
     conn.commit()
+
+    # =========================
+    # EVALUATION RECORDS (Per Student Lock)
+    # =========================
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS evaluation_records (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        evaluation_id INTEGER,
+        roll_no TEXT,
+        locked INTEGER DEFAULT 1
+    )
+    """)
+
 
     # =========================
     # LOAD HOD CONFIG
@@ -145,6 +161,7 @@ def init_db():
                 ))
 
         conn.commit()
+
 
     except Exception as e:
         print("HOD config load error:", e)

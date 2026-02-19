@@ -94,14 +94,29 @@
                 <button class="success-btn">View Result</button>
             </a>
 
+            {% if sub.unlocked_count > 0 %}
+<a href="/edit_unlocked/{{ sub['id'] }}">
+    <button class="primary-btn yellow-btn">
+        Unlocked Students ({{ sub.unlocked_count }})
+    </button>
+</a>
+{% endif %}
+
+
             {% if sub["locked"] == 0 %}
-                <span>or</span>
-                <a href="/start_again/{{ sub['id'] }}">
-                    <button class="primary-btn">Start Again</button>
-                </a>
-            {% else %}
-                <span class="lock-text">Locked</span>
-            {% endif %}
+
+    <span>or</span>
+    <a href="/start_again/{{ sub['id'] }}">
+        <button class="primary-btn">Start Again</button>
+    </a>
+
+{% elif sub["locked"] == 1 and sub.unlocked_count == 0 %}
+
+    <!-- 🔒 FULLY LOCKED -->
+    <span class="lock-text">🔒 Locked</span>
+
+{% endif %}
+
 
 
         {% elif sub["stage"] == "college_pending" %}

@@ -6,10 +6,8 @@
 </head>
 <body>
 
-<!-- ================= NAVBAR ================= -->
 <div class="navbar">
 <h3>NPTEL Result System</h3>
-
 <div class="nav-actions">
 <a href="/hod_dashboard"><button class="secondary-btn">Dashboard</button></a>
 <a href="/logout"><button class="primary-btn">Logout</button></a>
@@ -18,7 +16,6 @@
 
 <div class="container">
 
-<!-- ================= HEADER SECTION ================= -->
 <div style="display:flex; justify-content:space-between; align-items:flex-start;">
 
 <div>
@@ -27,16 +24,12 @@
 <p><b>Current Session:</b> {{ session_label }}</p>
 </div>
 
-<!-- RIGHT SIDE CONTROLS -->
 <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
 
-<!-- Session Dropdown -->
 <form method="POST" action="/set_session">
 <select name="session_label" class="session-dropdown" onchange="this.form.submit()">
-
 {% for s in all_sessions %}
-<option value="{{ s }}"
-{% if s == session_label %}selected{% endif %}>
+<option value="{{ s }}" {% if s == session_label %}selected{% endif %}>
 {{ s }}
 </option>
 {% endfor %}
@@ -56,12 +49,10 @@
 </a>
 
 </div>
-
 </div>
 
 <hr>
 
-<!-- ================= TEACHERS ================= -->
 <h3>Teachers</h3>
 
 {% if teachers %}
@@ -77,7 +68,6 @@
 <tr>
 <td>{{ teacher["name"] }}</td>
 <td>{{ teacher["email"] }}</td>
-
 <td>
 {% if teacher.subjects %}
     {% for sub in teacher.subjects %}
@@ -89,13 +79,11 @@
     <span style="color:gray;">No Subjects Assigned</span>
 {% endif %}
 </td>
-
 <td>
 <a href="/assign_subject/{{ teacher['id'] }}">
 <button class="primary-btn">Assign Subject</button>
 </a>
 </td>
-
 </tr>
 {% endfor %}
 </table>
@@ -103,11 +91,7 @@
 <p>No teachers added yet.</p>
 {% endif %}
 
-<br>
-
-
-
-<br>
+<br><br>
 <hr>
 
 <h3>Subjects Overview</h3>
@@ -119,7 +103,6 @@
 <h4 style="margin-top:30px;">Branch: {{ branch }}</h4>
 
 <table class="styled-table">
-
 <tr>
 <th>Semester</th>
 <th>Subject</th>
@@ -129,66 +112,69 @@
 </tr>
 
 {% for sem, subject_list in semester_map.items() %}
-    {% for sub in subject_list %}
-    <tr>
+{% for sub in subject_list %}
+<tr>
 
-        <td>{{ sem }}</td>
+<td>{{ sem }}</td>
 
-        <td>
-            <b>{{ sub["subject_name"] }}</b><br>
-            <small>
-            Code: {{ sub["subject_code"] }} |
-            Section: {{ sub["section"] }}
-            </small>
-        </td>
-
-        <td>{{ sub["teacher_name"] }}</td>
-
-        <td>
-            {% if sub["stage"] == "college_done" %}
-                <span style="color:green;">Completed</span>
-            {% elif sub["stage"] == "college_pending" %}
-                <span style="color:orange;">College Exam Pending</span>
-            {% else %}
-                <span style="color:red;">Not Started</span>
-            {% endif %}
-        </td>
-
-        <td>
-  <div style="display:flex; align-items:center; gap:12px;">
-
-    <!-- Preview -->
-    <a href="/preview_evaluation/{{ sub['evaluation_id'] }}">
-      <button class="primary-btn">Preview</button>
-    </a>
-
-    {% if sub["locked"] == 1 %}
-      <form method="GET"
-            action="/unlock_marks/{{ sub['id'] }}"
-            style="margin:0;">
-
-        <button class="primary-btn"
-                style="display:flex;
-                       align-items:center;
-                       gap:6px;
-                       background:#c0392b;">
-          🔒 Locked by Teacher
-          <span style="font-size:12px; opacity:0.9;">
-            (click to unlock)
-          </span>
-        </button>
-
-      </form>
-    {% endif %}
-
-  </div>
+<td>
+<b>{{ sub["subject_name"] }}</b><br>
+<small>
+Code: {{ sub["subject_code"] }} |
+Section: {{ sub["section"] }}
+</small>
 </td>
 
+<td>{{ sub["teacher_name"] }}</td>
 
-    </tr>
-    {% endfor %}
+<td>
+{% if sub["stage"] == "college_done" %}
+    <span style="color:green;">Completed</span>
+{% elif sub["stage"] == "college_pending" %}
+    <span style="color:orange;">College Exam Pending</span>
+{% else %}
+    <span style="color:red;">Not Started</span>
+{% endif %}
+</td>
+
+<td>
+<div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+
+{% if sub["evaluation_id"] %}
+<a href="/preview_evaluation/{{ sub['evaluation_id'] }}">
+<button class="primary-btn">Preview</button>
+</a>
+{% endif %}
+
+<!-- 🟡 PRIORITY 1: PARTIAL UNLOCK -->
+{% if sub.partial_unlock_count and sub.partial_unlock_count > 0 %}
+
+<a href="/unlock_marks/{{ sub['id'] }}">
+    <button class="primary-btn yellow-btn">
+        Unlocked ( {{ sub.partial_unlock_count }})
+    </button>
+</a>
+
+<!-- 🔒 PRIORITY 2: FULL LOCK -->
+{% elif sub["locked"] == 1 %}
+
+<form method="GET"
+      action="/unlock_marks/{{ sub['id'] }}"
+      style="margin:0;">
+    <button class="primary-btn"
+            style="background:#c0392b;">
+        🔒 Locked by Teacher
+    </button>
+</form>
+
+{% endif %}
+
+</div>
+</td>
+
+</tr>
 {% endfor %}
-
+{% endfor %}
 </table>
 
 {% endfor %}
