@@ -56,7 +56,8 @@ def init_db():
     CREATE TABLE IF NOT EXISTS subjects_master (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         subject_code TEXT UNIQUE NOT NULL,
-        subject_name TEXT NOT NULL
+        subject_name TEXT NOT NULL, 
+        is_nptel INTEGER DEFAULT 0
     )
     """)
 

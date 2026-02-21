@@ -1,0 +1,26 @@
+<h2>Upload Subjects</h2>
+
+<form method="POST" enctype="multipart/form-data">
+    <input type="file" name="file" required>
+    <br><br>
+    <button class="primary-btn">Upload</button>
+</form>
+
+{% if nptel_subjects %}
+<hr>
+<h3>NPTEL Subjects (Selected)</h3>
+
+<table class="styled-table">
+<tr>
+    <th>Code</th>
+    <th>Name</th>
+</tr>
+
+{% for s in nptel_subjects %}
+<tr>
+    <td>{{ s.subject_code }}</td>
+    <td>{{ s.subject_name }}</td>
+</tr>
+{% endfor %}
+</table>
+{% endif %}

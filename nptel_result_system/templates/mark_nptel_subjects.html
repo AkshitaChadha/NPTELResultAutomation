@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Select NPTEL Subjects</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<!-- 🔹 NAVBAR -->
+<div class="navbar">
+    <h3>NPTEL Result System</h3>
+    <div class="nav-actions">
+        <a href="/manage_subjects" class="secondary-btn">Back</a>
+        <a href="/logout" class="secondary-btn">Logout</a>
+    </div>
+</div>
+
+<!-- 🔹 MAIN CONTAINER -->
+<div class="container">
+
+    <h2 class="page-title">Select NPTEL Subjects</h2>
+    <p>Select the subjects that are evaluated through NPTEL.</p>
+
+    <form method="POST" action="/save_nptel_subjects">
+
+        <table class="styled-table">
+            <tr>
+                <th>NPTEL</th>
+                <th>Subject Code</th>
+                <th>Subject Name</th>
+            </tr>
+
+            {% for s in subjects %}
+            <tr>
+                <td style="text-align:center;">
+                    <input type="checkbox"
+                           name="nptel_subjects"
+                           value="{{ s.id }}"
+                           {% if s.is_nptel == 1 %}checked{% endif %}>
+                </td>
+                <td>{{ s.subject_code }}</td>
+                <td>{{ s.subject_name }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+
+        <br>
+
+        <button class="primary-btn">
+            Save NPTEL Subjects
+        </button>
+
+    </form>
+
+</div>
+
+</body>
+</html>

@@ -142,6 +142,104 @@ def upload():
 
     return render_template("preview.html", data=ORIGINAL_DATA)
 
+@app.route("/upload_subjects", methods=["GET", "POST"])
+def upload_subjects():
+
+    if not hod_required():
+        return redirect("/login")
+
+    session_id = session["active_session_id"]
+    conn = get_db_connection()
+
+    if request.method == "POST":
+
+        file = request.files.get("file")
+        df = pd.read_excel(file)
+        df.columns = df.columns.str.strip().str.lower()
+
+        if list(df.columns) != ["subject_code", "subject_name"]:
+            return "Invalid format"
+
+        
+        for _, row in df.iterrows():
+            conn.execute("""
+                INSERT OR IGNORE INTO subjects_master
+                (subject_code, subject_name, is_nptel)
+                VALUES (?, ?, 0)
+            """, (
+                str(row["subject_code"]).strip().upper(),
+                str(row["subject_name"]).strip()
+            ))
+
+        conn.commit()
+        conn.close()
+
+        # 🔥 REDIRECT TO NPTEL SELECTION PAGE
+        return redirect("/mark_nptel_subjects")
+
+    # 🔵 GET → show only NPTEL subjects
+    nptel_subjects = conn.execute("""
+        SELECT * FROM subjects_master
+        WHERE is_nptel=1
+        ORDER BY subject_code
+    """).fetchall()
+
+    conn.close()
+
+    return render_template(
+        "upload_subjects.html",
+        nptel_subjects=nptel_subjects
+    )
+
+@app.route("/mark_nptel_subjects")
+def mark_nptel_subjects():
+
+    if not hod_required():
+        return redirect("/login")
+
+    conn = get_db_connection()
+    session_id = session["active_session_id"]
+
+    subjects = conn.execute("""
+        SELECT * FROM subjects_master
+        ORDER BY subject_code
+    """,).fetchall()
+
+    conn.close()
+
+    return render_template(
+        "mark_nptel_subjects.html",
+        subjects=subjects
+    )
+@app.route("/save_nptel_subjects", methods=["POST"])
+def save_nptel_subjects():
+
+    if not hod_required():
+        return redirect("/login")
+
+    selected = request.form.getlist("nptel_subjects")
+
+    conn = get_db_connection()
+
+    # 🔴 Reset all
+    conn.execute("UPDATE subjects_master SET is_nptel = 0")
+
+    # 🟢 Mark selected
+    if selected:
+        conn.execute(
+            f"""
+            UPDATE subjects_master
+            SET is_nptel = 1
+            WHERE id IN ({",".join(["?"] * len(selected))})
+            """,
+            selected
+        )
+
+    conn.commit()
+    conn.close()
+
+    # ✅ GO BACK TO MANAGE SUBJECTS
+    return redirect("/manage_subjects")
 
 @app.route("/start_again/<int:subject_id>")
 def start_again(subject_id):
@@ -1656,7 +1754,12 @@ def manage_subjects():
         return redirect("/manage_subjects")
 
     subjects = conn.execute(
-        "SELECT * FROM subjects_master ORDER BY subject_code"
+        """
+        SELECT *
+        FROM subjects_master
+        WHERE is_nptel = 1
+        ORDER BY subject_code
+        """
     ).fetchall()
 
     conn.close()
