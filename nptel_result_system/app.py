@@ -1876,99 +1876,135 @@ def hod_profile():
         teachers=teachers
     )
 
+from flask import flash
+import sqlite3
+
 @app.route("/manage_teachers", methods=["GET", "POST"])
 def manage_teachers():
 
     if not hod_required():
         return redirect("/login")
 
-    conn = get_db_connection()
+    # Ensure session exists
+    if "active_session_id" not in session:
+        session["active_session_id"] = get_or_create_session(
+            session["session_label"]
+        )
 
-    # Manual Add
-    if request.method == "POST" and "manual_add" in request.form:
+    # =========================
+    # 🔴 POST SECTION
+    # =========================
+    if request.method == "POST":
 
-        name = request.form.get("name")
-        email = request.form.get("email")
+        conn = get_db_connection()
 
-        if name and email:
+        try:
 
-            temp_password = generate_password_hash("TEMP123")
+            # ======================
+            # 🔹 Manual Add
+            # ======================
+            if "manual_add" in request.form:
 
-            conn.execute("""
-                INSERT INTO teachers (name, email, password, hod_id, is_active)
-                VALUES (?, ?, ?, ?, 0)
-            """, (
-                name.strip(),
-                email.strip(),
-                temp_password,
-                session["user_id"]
-            ))
-
-            conn.commit()
-
-        return render_template(
-    "manage_teachers.html",
-    teachers=teachers,
-    is_super_admin=session.get("is_super_admin", False)
-
-)
-
-
-    # Excel Upload
-    if request.method == "POST" and "excel_upload" in request.form:
-
-        file = request.files.get("file")
-
-        if file and file.filename.endswith((".xlsx", ".csv")):
-
-            if file.filename.endswith(".xlsx"):
-                df = pd.read_excel(file, engine="openpyxl")
-            else:
-                df = pd.read_csv(file)
-
-            df.columns = df.columns.str.strip()
-
-            for _, row in df.iterrows():
-
-                name = str(row.get("name", "")).strip()
-                email = str(row.get("email", "")).strip()
+                name = request.form.get("name")
+                email = request.form.get("email")
 
                 if name and email:
 
                     temp_password = generate_password_hash("TEMP123")
 
-                    conn.execute("""
-                        INSERT INTO teachers (name, email, password, hod_id, is_active)
-                        VALUES (?, ?, ?, ?, 0)
-                    """, (
-                        name,
-                        email,
-                        temp_password,
-                        session["user_id"]
-                    ))
+                    try:
+                        conn.execute("""
+                            INSERT INTO teachers
+                            (name, email, password, hod_id, is_active)
+                            VALUES (?, ?, ?, ?, 0)
+                        """, (
+                            name.strip(),
+                            email.strip().lower(),
+                            temp_password,
+                            session["user_id"]
+                        ))
 
-            conn.commit()
+                        conn.commit()
+                        flash("Teacher added successfully!", "success")
 
-        return render_template(
-    "manage_teachers.html",
-    teachers=teachers,
-    is_super_admin=session.get("is_super_admin", False)
-)
+                    except sqlite3.IntegrityError:
+                        conn.rollback()
+                        flash("Email already exists!", "danger")
 
+            # ======================
+            # 🔹 Excel Upload
+            # ======================
+            if "excel_upload" in request.form:
 
-    teachers = conn.execute(
-        "SELECT * FROM teachers WHERE hod_id=? ORDER BY name",
-        (session["user_id"],)
-    ).fetchall()
+                file = request.files.get("file")
+
+                if file and file.filename.endswith((".xlsx", ".csv")):
+
+                    if file.filename.endswith(".xlsx"):
+                        df = pd.read_excel(file, engine="openpyxl")
+                    else:
+                        df = pd.read_csv(file)
+
+                    df.columns = df.columns.str.strip()
+
+                    duplicate_found = False
+
+                    for _, row in df.iterrows():
+
+                        name = str(row.get("name", "")).strip()
+                        email = str(row.get("email", "")).strip().lower()
+
+                        if name and email:
+
+                            temp_password = generate_password_hash("TEMP123")
+
+                            try:
+                                conn.execute("""
+                                    INSERT INTO teachers
+                                    (name, email, password, hod_id, is_active)
+                                    VALUES (?, ?, ?, ?, 0)
+                                """, (
+                                    name,
+                                    email,
+                                    temp_password,
+                                    session["user_id"]
+                                ))
+
+                            except sqlite3.IntegrityError:
+                                duplicate_found = True
+                                continue
+
+                    conn.commit()
+
+                    if duplicate_found:
+                        flash("Some emails already existed and were skipped.", "danger")
+                    else:
+                        flash("Teachers uploaded successfully!", "success")
+
+        finally:
+            conn.close()
+
+        return redirect("/manage_teachers")
+
+    # =========================
+    # 🟢 GET SECTION
+    # =========================
+    conn = get_db_connection()
+
+    teachers = conn.execute("""
+        SELECT DISTINCT t.*
+        FROM teachers t
+        WHERE t.hod_id=?
+        ORDER BY t.name
+    """, (session["user_id"],)).fetchall()
 
     conn.close()
 
     return render_template(
-    "manage_teachers.html",
-    teachers=teachers,
-    is_super_admin=session.get("is_super_admin", False)
-)
-
+        "manage_teachers.html",
+        teachers=teachers,
+        is_super_admin=session.get("is_super_admin", False)
+    )
 
 
 @app.route("/delete_teacher/<int:teacher_id>")

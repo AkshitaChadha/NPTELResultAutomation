@@ -5,13 +5,11 @@ from werkzeug.security import generate_password_hash
 def get_db_connection():
     conn = sqlite3.connect(
         "database.db",
-        timeout=10,
+        timeout=30,                 # increase timeout
         check_same_thread=False
     )
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL;")
     return conn
-
 
 def init_db():
 
