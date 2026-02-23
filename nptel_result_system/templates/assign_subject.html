@@ -14,7 +14,6 @@
         <a href="/hod_dashboard">
             <button class="secondary-btn">Dashboard</button>
         </a>
-
         <a href="/logout">
             <button class="primary-btn">Logout</button>
         </a>
@@ -26,77 +25,113 @@
 <h2>Assign Subject</h2>
 
 <div class="subject-header">
-Teacher: {{ teacher["name"] }}
+    Teacher: {{ teacher["name"] }}
 </div>
 
 <br>
 
 <form method="POST" class="form-box grid-2">
 
-<!-- ================= SUBJECT DROPDOWN ================= -->
+<!-- ================= BRANCH ================= -->
 <div class="form-group">
-<label>Subject</label>
-<br>
-<select name="subject_code" required>
-<option value="">Select Subject</option>
-
-{% for sub in subjects %}
-<option value="{{ sub['subject_code'] }}">
-    {{ sub['subject_code'] }} - {{ sub['subject_name'] }}
-</option>
-{% endfor %}
-
-</select>
+    <label>Branch</label><br>
+    <select name="branch" id="branch" required onchange="loadData()">
+        <option value="">Select Branch</option>
+        {% for branch in branches %}
+        <option value="{{ branch['name'] }}">{{ branch['name'] }}</option>
+        {% endfor %}
+    </select>
 </div>
 
 <!-- ================= SEMESTER ================= -->
 <div class="form-group">
-<label>Semester</label>
-<br>
-<select name="semester" required>
-<option value="">Select Semester</option>
+    <label>Semester</label><br>
+    <select name="semester" id="semester" required onchange="loadData()">
+        <option value="">Select Semester</option>
+        {% for sem in semester_options %}
+        <option value="{{ sem }}">{{ sem }}</option>
+        {% endfor %}
+    </select>
+</div>
 
-{% for sem in semester_options %}
-<option value="{{ sem }}">{{ sem }}</option>
-{% endfor %}
-
-</select>
+<!-- ================= SUBJECT (NPTEL ONLY) ================= -->
+<div class="form-group">
+    <label>Subject</label><br>
+    <select name="subject_id" id="subject" required disabled>
+        <option value="">Select Subject</option>
+    </select>
 </div>
 
 <!-- ================= SECTION ================= -->
 <div class="form-group">
-<label>Section</label>
-<br>
-<select name="section" required>
-<option value="">Select Section</option>
-<option value="1">1</option>
-<option value="2">2</option>
-<option value="3">3</option>
-</select>
+    <label>Section</label><br>
+    <select name="section" id="section" required disabled>
+        <option value="">Select Section</option>
+    </select>
 </div>
-
-<!-- ================= BRANCH (DYNAMIC) ================= -->
-<div class="form-group">
-<label>Branch</label>
-<br>
-<select name="branch" required>
-<option value="">Select Branch</option>
-
-{% for branch in branches %}
-<option value="{{ branch['name'] }}">
-    {{ branch['name'] }}
-</option>
-{% endfor %}
-
-</select>
-</div>
-
 
 <button class="green-btn full-width">Assign Subject</button>
 
 </form>
-
 </div>
+
+<script>
+function loadData() {
+    const branch = document.getElementById("branch").value;
+    const semester = document.getElementById("semester").value;
+
+    const subjectSelect = document.getElementById("subject");
+    const sectionSelect = document.getElementById("section");
+
+    subjectSelect.innerHTML = '<option value="">Select Subject</option>';
+    sectionSelect.innerHTML = '<option value="">Select Section</option>';
+
+    subjectSelect.disabled = true;
+    sectionSelect.disabled = true;
+
+    if (!branch || !semester) return;
+
+    /* ---------- LOAD NPTEL SUBJECTS ---------- */
+    fetch(`/get_nptel_subjects?branch=${branch}&semester=${semester}`)
+        .then(res => res.json())
+        .then(data => {
+            if (data.length === 0) {
+                const opt = document.createElement("option");
+                opt.textContent = "No subjects available";
+                opt.disabled = true;
+                subjectSelect.appendChild(opt);
+            } else {
+                data.forEach(sub => {
+                    const opt = document.createElement("option");
+                    opt.value = sub.id;
+                    opt.textContent = sub.label;
+                    subjectSelect.appendChild(opt);
+                });
+                subjectSelect.disabled = false;
+            }
+        });
+
+    /* ---------- LOAD AVAILABLE SECTIONS ---------- */
+    fetch(`/get_available_sections?branch=${branch}&semester=${semester}`)
+        .then(res => res.json())
+        .then(data => {
+            if (data.length === 0) {
+                const opt = document.createElement("option");
+                opt.textContent = "No sections available";
+                opt.disabled = true;
+                sectionSelect.appendChild(opt);
+            } else {
+                data.forEach(sec => {
+                    const opt = document.createElement("option");
+                    opt.value = sec;
+                    opt.textContent = sec;
+                    sectionSelect.appendChild(opt);
+                });
+                sectionSelect.disabled = false;
+            }
+        });
+}
+</script>
 
 </body>
 </html>

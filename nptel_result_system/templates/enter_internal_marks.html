@@ -1,0 +1,24 @@
+<form action="/enter_internal_marks" method="POST">
+
+<table class="styled-table">
+<tr>
+  <th>Roll</th>
+  <th>Name</th>
+  <th>Internal Marks (25)</th>
+</tr>
+
+{% for s in data %}
+<tr>
+  <td>{{ s["University Roll Number"] }}</td>
+  <td>{{ s["Student Name"] }}</td>
+  <td>
+    <input type="number"
+           name="internal_{{ s['University Roll Number'] }}"
+           min="0" max="25" required>
+  </td>
+</tr>
+{% endfor %}
+</table>
+
+<button class="primary-btn">Proceed to External Upload</button>
+</form>

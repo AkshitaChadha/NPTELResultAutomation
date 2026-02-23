@@ -88,19 +88,33 @@ def init_db():
     # =========================
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS subjects (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        subject_code TEXT NOT NULL,
-        subject_name TEXT NOT NULL,
-        semester TEXT,
-        section TEXT,
-        branch TEXT,
-        remark TEXT,
-        teacher_id INTEGER NOT NULL,
-        session_id INTEGER NOT NULL,
-        UNIQUE(subject_code, teacher_id, session_id, semester, section)
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    subject_code TEXT NOT NULL,
+    subject_name TEXT NOT NULL,
+    semester TEXT,
+    section TEXT,
+    branch TEXT,
+    remark TEXT,
+    teacher_id INTEGER NOT NULL,
+    session_id INTEGER NOT NULL,
+
+    -- 🔥 THIS IS THE KEY FIX
+    UNIQUE(branch, semester, section, session_id)
     )
     """)
 
+    # =========================
+    # NPTEL SUBJECT MAPPING
+    # =========================
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS nptel_subject_mapping (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    subject_id INTEGER,
+    branch TEXT,
+    semester TEXT,
+    UNIQUE(subject_id, branch, semester)
+    )
+    """)
     # =========================
     # EVALUATIONS
     # =========================

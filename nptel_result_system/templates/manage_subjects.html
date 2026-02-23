@@ -20,7 +20,7 @@
 <h2 class="page-title">Manage Subjects</h2>
 <br>
 
-<!-- Manual Add -->
+<!-- Manual Add 
 <form method="POST" class="form-box" style="margin-bottom:20px;">
 <input type="hidden" name="manual_add" value="1">
 
@@ -38,11 +38,12 @@
 
 <button class="primary-btn">Add Subject</button>
 </form>
-
 <hr>
+-->
+
 
 <!-- Excel Upload -->
-<form method="POST" action="/upload_subjects" enctype="multipart/form-data" class="form-box">
+<form method="POST" action="/manage_subjects" enctype="multipart/form-data" class="form-box">
 <input type="hidden" name="excel_upload" value="1">
 
 <div class="form-group">
@@ -58,30 +59,46 @@
 <hr>
 
 <!-- Subject List -->
-{% if subjects %}
-<table class="styled-table">
-<tr>
-<th>Code</th>
-<th>Name</th>
-<th>Action</th>
-</tr>
+{% if semester_map %}
 
-{% for sub in subjects %}
-<tr>
-<td>{{ sub["subject_code"] }}</td>
-<td>{{ sub["subject_name"] }}</td>
-<td>
-<a href="/delete_subject/{{ sub['id'] }}">
-<button class="secondary-btn">Delete</button>
-</a>
-</td>
-</tr>
-{% endfor %}
-</table>
+  {% for sem, subs in semester_map.items() %}
+
+    <h3 style="margin-top:30px;">Semester {{ sem }}</h3>
+
+    <table class="styled-table">
+      <tr>
+        <th>Code</th>
+        <th>Name</th>
+        <th>Branches</th>
+        <th>Action</th>
+      </tr>
+
+      {% for sub in subs %}
+      <tr>
+        <td>{{ sub.subject_code }}</td>
+        <td>{{ sub.subject_name }}</td>
+        <td>
+          {% if sub.branches %}
+            {{ sub.branches }}
+          {% else %}
+            <span style="color:#888;">Not mapped</span>
+          {% endif %}
+        </td>
+        <td>
+          <a href="/delete_subject/{{ sub.id }}"
+             onclick="return confirm('Delete this subject?');">
+            <button class="secondary-btn">Delete</button>
+          </a>
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+
+  {% endfor %}
+
 {% else %}
-<p>No subjects added yet.</p>
+  <p>No subjects added yet.</p>
 {% endif %}
-
 </div>
 </body>
 </html>

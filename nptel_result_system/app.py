@@ -10,7 +10,7 @@ from flask import session, flash
 from werkzeug.security import generate_password_hash, check_password_hash
 from database import get_db_connection
 from flask import session 
-
+from flask import jsonify
 
 app = Flask(__name__)
 
@@ -211,6 +211,159 @@ def mark_nptel_subjects():
         "mark_nptel_subjects.html",
         subjects=subjects
     )
+    
+""" @app.route("/enter_internal_marks", methods=["GET", "POST"])
+def enter_internal_marks():
+
+    if "user_id" not in session:
+        return redirect("/login")
+
+    data = session.get("ORIGINAL_DATA")
+    if not data:
+        return redirect("/upload")
+
+    if request.method == "POST":
+        for row in data:
+            roll = row["University Roll Number"]
+            mark = request.form.get(f"internal_{roll}")
+
+            try:
+                row["Internal Marks"] = float(mark)
+            except:
+                row["Internal Marks"] = 0
+
+        session["ORIGINAL_DATA"] = data
+        return redirect("/enter_external_marks")
+
+    return render_template("enter_internal_marks.html", data=data)
+
+@app.route("/enter_external_marks", methods=["GET", "POST"])
+def enter_external_marks():
+
+    if "user_id" not in session:
+        return redirect("/login")
+
+    data = session.get("ORIGINAL_DATA")
+    if not data:
+        return redirect("/upload")
+
+    if request.method == "POST":
+        file = request.files.get("file")
+
+        if not file:
+            return "No file uploaded"
+
+        df = pd.read_excel(file)
+        df.columns = df.columns.str.strip()
+
+        REQUIRED = ["University Roll Number", "Marks"]
+        if list(df.columns) != REQUIRED:
+            return "Invalid format. Required columns: University Roll Number, Marks"
+
+        # Map marks
+        roll_map = {
+            str(s["University Roll Number"]).strip(): s
+            for s in data
+        }
+
+        for _, row in df.iterrows():
+            roll = str(row["University Roll Number"]).strip()
+            marks = row["Marks"]
+
+            if roll in roll_map:
+                try:
+                    roll_map[roll]["NPTEL External Marks"] = float(marks)
+                except:
+                    roll_map[roll]["NPTEL External Marks"] = 0
+
+        session["ORIGINAL_DATA"] = data
+
+        return redirect("/evaluate")
+
+    return render_template("enter_external_marks.html", data=data)
+
+
+@app.route("/save_external_marks", methods=["POST"])
+def save_external_marks():
+    data = session.get("ORIGINAL_DATA")
+
+    df = pd.read_excel(request.files["file"])
+    df.columns = df.columns.str.strip()
+
+    for _, row in df.iterrows():
+        roll = str(row["University Roll Number"]).strip()
+        for s in ORIGINAL_DATA:
+            if s["University Roll Number"] == roll:
+                s["NPTEL External Marks"] = float(row["Marks"])
+                break
+
+    return redirect("/evaluate") """
+    
+@app.route("/map_nptel_subjects", methods=["GET", "POST"])
+def map_nptel_subjects():
+
+    if not hod_required():
+        return redirect("/login")
+
+    conn = get_db_connection()
+
+    # =========================
+    # 🔹 POST → SAVE MAPPING
+    # =========================
+    if request.method == "POST":
+
+        subject_ids = request.form.getlist("subject_id[]")
+
+        for sid in subject_ids:
+
+            branches = request.form.getlist(f"branches_{sid}")
+            semester = request.form.get(f"semester_{sid}")
+
+            for branch in branches:
+                conn.execute("""
+                    INSERT OR IGNORE INTO nptel_subject_mapping
+                    (subject_id, branch, semester)
+                    VALUES (?, ?, ?)
+                """, (sid, branch, semester))
+
+        conn.commit()
+        conn.close()
+
+        return redirect("/manage_subjects")
+
+    # =========================
+    # 🔹 GET → LOAD DATA
+    # =========================
+    subjects = conn.execute("""
+        SELECT *
+        FROM subjects_master
+        WHERE is_nptel = 1
+        ORDER BY subject_code
+    """).fetchall()
+
+    branches = conn.execute("""
+        SELECT name
+        FROM branches
+        WHERE hod_id=?
+    """, (session["user_id"],)).fetchall()
+
+    # 🔥 SESSION‑WISE SEMESTERS
+    session_label = session.get("session_label", "").lower()
+
+    if "jan" in session_label or "may" in session_label:
+        allowed_semesters = [2, 4, 6, 8]   # EVEN
+    else:
+        allowed_semesters = [1, 3, 5, 7]   # ODD
+
+    conn.close()
+
+    return render_template(
+        "map_nptel_subjects.html",
+        subjects=subjects,
+        branches=branches,
+        allowed_semesters=allowed_semesters
+    )
+    
 @app.route("/save_nptel_subjects", methods=["POST"])
 def save_nptel_subjects():
 
@@ -239,7 +392,66 @@ def save_nptel_subjects():
     conn.close()
 
     # ✅ GO BACK TO MANAGE SUBJECTS
-    return redirect("/manage_subjects")
+    return redirect("/map_nptel_subjects")
+
+@app.route("/get_nptel_subjects")
+def get_nptel_subjects():
+
+    branch = request.args.get("branch")
+    semester = request.args.get("semester")
+
+    conn = get_db_connection()
+
+    subjects = conn.execute("""
+        SELECT DISTINCT
+            sm.id,
+            sm.subject_code,
+            sm.subject_name
+        FROM nptel_subject_mapping nm
+        JOIN subjects_master sm
+            ON sm.id = nm.subject_id
+        WHERE nm.branch = ?
+          AND nm.semester = ?
+          AND sm.is_nptel = 1
+        ORDER BY sm.subject_code
+    """, (branch, semester)).fetchall()
+
+    conn.close()
+
+    return jsonify([
+        {
+            "id": s["id"],
+            "label": f'{s["subject_code"]} - {s["subject_name"]}'
+        }
+        for s in subjects
+    ])
+
+
+
+@app.route("/get_available_sections")
+def get_available_sections():
+
+    branch = request.args.get("branch")
+    semester = int(request.args.get("semester"))
+
+    conn = get_db_connection()
+
+    assigned = conn.execute("""
+        SELECT section
+        FROM subjects
+        WHERE branch = ?
+          AND semester = ?
+          AND session_id = ?
+    """, (branch, semester, session["active_session_id"])).fetchall()
+
+    assigned_sections = {row["section"] for row in assigned}
+
+    all_sections = {"1", "2", "3"}   # extend later if needed
+    available_sections = sorted(all_sections - assigned_sections)
+
+    conn.close()
+
+    return jsonify(available_sections)
 
 @app.route("/start_again/<int:subject_id>")
 def start_again(subject_id):
@@ -500,7 +712,7 @@ import json
 @app.route("/final_results")
 def final_results():
 
-    global ORIGINAL_DATA
+    data = session.get("ORIGINAL_DATA")
 
     final_list = []
     college_pending = []
@@ -601,7 +813,7 @@ def download_pdf(eval_id):
 @app.route("/save_college_marks", methods=["POST"])
 def save_college_marks():
 
-    global ORIGINAL_DATA
+    data = session.get("ORIGINAL_DATA")
 
     subject_id = session.get("active_subject")
 
@@ -747,7 +959,7 @@ def save_college_marks():
 @app.route("/download_college_list")
 def download_college_list():
 
-    global COLLEGE_LIST
+    data = session.get("ORIGINAL_DATA")
 
     if not COLLEGE_LIST:
         return "No college exam students available."
@@ -1503,16 +1715,19 @@ def assign_subject(teacher_id):
         conn.close()
         return "Teacher not found."
 
-    # 🔹 Load Subject Master
-    subjects = conn.execute(
-        "SELECT * FROM subjects_master"
-    ).fetchall()
 
     # 🔹 Load Branches
     branches = conn.execute(
         "SELECT * FROM branches WHERE hod_id=?",
         (session["user_id"],)
     ).fetchall()
+
+    # 🔹 Load Subjects (from subjects_master)
+    subjects = conn.execute("""
+        SELECT id, subject_code, subject_name
+        FROM subjects_master
+        ORDER BY subject_code
+    """).fetchall()
 
     conn.close()
 
@@ -1521,7 +1736,7 @@ def assign_subject(teacher_id):
     # =========================
     if request.method == "POST":
 
-        subject_code = request.form.get("subject_code")
+        subject_id = request.form.get("subject_id")
         semester = request.form.get("semester")
         section = request.form.get("section")
         branch = request.form.get("branch")
@@ -1530,14 +1745,16 @@ def assign_subject(teacher_id):
         conn = get_db_connection()
 
         try:
-            subject_row = conn.execute(
-                "SELECT subject_name FROM subjects_master WHERE subject_code=?",
-                (subject_code,)
-            ).fetchone()
+            subject_row = conn.execute("""
+                SELECT subject_code, subject_name
+                FROM subjects_master
+                WHERE id=?
+            """, (subject_id,)).fetchone()
 
             if not subject_row:
                 return "Invalid Subject Selected."
 
+            subject_code = subject_row["subject_code"]
             subject_name = subject_row["subject_name"]
 
             # ✅ reuse SAME connection here
@@ -1545,7 +1762,23 @@ def assign_subject(teacher_id):
                 session["session_label"],
                 conn
             )
+            existing = conn.execute("""
+                SELECT 1
+                FROM subjects
+                WHERE branch = ?
+                AND semester = ?
+                AND section = ?
+                AND session_id = ?
+            """, (branch, semester, section, session["active_session_id"])).fetchone()
 
+            if existing:
+                flash(
+                    f"Section {section} of {branch} Semester {semester} is already assigned!",
+                    "danger"
+                )
+                conn.close()
+                return redirect(request.url)
+            
             conn.execute("""
                 INSERT INTO subjects
                 (subject_code, subject_name, semester, section, branch, remark, teacher_id, session_id)
@@ -1569,10 +1802,9 @@ def assign_subject(teacher_id):
         return redirect("/hod_dashboard")
 
     # Semester logic
-    import datetime
-    month = datetime.datetime.now().month
+    session_label = session["session_label"].lower()
 
-    if 1 <= month <= 5:
+    if "jan" in session_label or "may" in session_label:
         semester_options = [2, 4, 6, 8]
     else:
         semester_options = [1, 3, 5, 7]
@@ -1710,9 +1942,10 @@ def manage_subjects():
 
     conn = get_db_connection()
 
+    # -------------------------
     # 🔹 Manual Add
+    # -------------------------
     if request.method == "POST" and "manual_add" in request.form:
-
         code = request.form.get("subject_code")
         name = request.form.get("subject_name")
 
@@ -1723,15 +1956,16 @@ def manage_subjects():
             )
             conn.commit()
 
+        conn.close()
         return redirect("/manage_subjects")
 
+    # -------------------------
     # 🔹 Excel Upload
+    # -------------------------
     if request.method == "POST" and "excel_upload" in request.form:
-
         file = request.files.get("file")
 
         if file and file.filename.endswith((".xlsx", ".csv")):
-
             if file.filename.endswith(".xlsx"):
                 df = pd.read_excel(file, engine="openpyxl")
             else:
@@ -1751,21 +1985,39 @@ def manage_subjects():
 
             conn.commit()
 
-        return redirect("/manage_subjects")
+        conn.close()
+        return redirect("/mark_nptel_subjects")
 
-    subjects = conn.execute(
-        """
-        SELECT *
-        FROM subjects_master
-        WHERE is_nptel = 1
-        ORDER BY subject_code
-        """
-    ).fetchall()
+    # ==================================================
+    # ✅ GET → SHOW MAPPED NPTEL SUBJECTS
+    # ==================================================
+    subjects = conn.execute("""
+        SELECT
+            nm.semester,
+            sm.id,
+            sm.subject_code,
+            sm.subject_name,
+            GROUP_CONCAT(nm.branch, ', ') AS branches
+        FROM nptel_subject_mapping nm
+        JOIN subjects_master sm
+            ON sm.id = nm.subject_id
+        WHERE sm.is_nptel = 1
+        GROUP BY nm.semester, sm.id, sm.subject_code, sm.subject_name
+        ORDER BY nm.semester, sm.subject_code
+    """).fetchall()
 
     conn.close()
+    from collections import defaultdict
 
-    return render_template("manage_subjects.html", subjects=subjects)
+    semester_map = defaultdict(list)
 
+    for row in subjects:
+        semester_map[row["semester"]].append(row)
+
+    return render_template(
+        "manage_subjects.html",
+        semester_map= semester_map
+    )
 
 @app.route("/delete_subject/<int:subject_id>")
 def delete_subject(subject_id):
