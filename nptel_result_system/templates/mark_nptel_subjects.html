@@ -34,9 +34,9 @@
             <tr>
                 <td style="text-align:center;">
                     <input type="checkbox"
-                           name="nptel_subjects[]"
-                           value="{{ s.id }}"
-                           {% if s.is_nptel == 1 %}checked{% endif %}>
+       name="nptel_subjects"
+       value="{{ s.id }}"
+       {% if s.selected %}checked{% endif %}>
                 </td>
                 <td>{{ s.subject_code }}</td>
                 <td>{{ s.subject_name }}</td>

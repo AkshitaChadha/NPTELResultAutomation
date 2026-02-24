@@ -148,39 +148,41 @@ def upload_subjects():
     if not hod_required():
         return redirect("/login")
 
-    session_id = session["active_session_id"]
     conn = get_db_connection()
 
     if request.method == "POST":
 
         file = request.files.get("file")
+
+        if not file:
+            return "No file uploaded"
+
         df = pd.read_excel(file)
         df.columns = df.columns.str.strip().str.lower()
 
         if list(df.columns) != ["subject_code", "subject_name"]:
-            return "Invalid format"
+            return "Invalid format. Required columns: subject_code, subject_name"
 
-        
         for _, row in df.iterrows():
-            conn.execute("""
-                INSERT OR IGNORE INTO subjects_master
-                (subject_code, subject_name, is_nptel)
-                VALUES (?, ?, 0)
-            """, (
-                str(row["subject_code"]).strip().upper(),
-                str(row["subject_name"]).strip()
-            ))
+            code = str(row["subject_code"]).strip().upper()
+            name = str(row["subject_name"]).strip()
+
+            if code and name:
+                conn.execute("""
+                    INSERT OR IGNORE INTO subjects_master
+                    (subject_code, subject_name)
+                    VALUES (?, ?)
+                """, (code, name))
 
         conn.commit()
         conn.close()
 
-        # 🔥 REDIRECT TO NPTEL SELECTION PAGE
+        # 🔥 Redirect to NPTEL selection
         return redirect("/mark_nptel_subjects")
 
-    # 🔵 GET → show only NPTEL subjects
-    nptel_subjects = conn.execute("""
-        SELECT * FROM subjects_master
-        WHERE is_nptel=1
+    subjects = conn.execute("""
+        SELECT *
+        FROM subjects_master
         ORDER BY subject_code
     """).fetchall()
 
@@ -188,7 +190,7 @@ def upload_subjects():
 
     return render_template(
         "upload_subjects.html",
-        nptel_subjects=nptel_subjects
+        subjects=subjects
     )
 
 @app.route("/mark_nptel_subjects")
@@ -197,13 +199,21 @@ def mark_nptel_subjects():
     if not hod_required():
         return redirect("/login")
 
-    conn = get_db_connection()
     session_id = session["active_session_id"]
+    conn = get_db_connection()
 
     subjects = conn.execute("""
-        SELECT * FROM subjects_master
-        ORDER BY subject_code
-    """,).fetchall()
+        SELECT sm.*,
+        CASE
+            WHEN nm.subject_id IS NOT NULL THEN 1
+            ELSE 0
+        END as selected
+        FROM subjects_master sm
+        LEFT JOIN nptel_subject_mapping nm
+            ON sm.id = nm.subject_id
+            AND nm.session_id = ?
+        ORDER BY sm.subject_code
+    """, (session_id,)).fetchall()
 
     conn.close()
 
@@ -211,7 +221,7 @@ def mark_nptel_subjects():
         "mark_nptel_subjects.html",
         subjects=subjects
     )
-    
+
 """ @app.route("/enter_internal_marks", methods=["GET", "POST"])
 def enter_internal_marks():
 
@@ -305,10 +315,11 @@ def map_nptel_subjects():
     if not hod_required():
         return redirect("/login")
 
+    session_id = session["active_session_id"]
     conn = get_db_connection()
 
     # =========================
-    # 🔹 POST → SAVE MAPPING
+    # 🔹 POST → Save Branch + Semester
     # =========================
     if request.method == "POST":
 
@@ -319,12 +330,19 @@ def map_nptel_subjects():
             branches = request.form.getlist(f"branches_{sid}")
             semester = request.form.get(f"semester_{sid}")
 
+            # 🔴 delete old mappings for that subject in this session
+            conn.execute("""
+                DELETE FROM nptel_subject_mapping
+                WHERE subject_id = ?
+                AND session_id = ?
+            """, (sid, session_id))
+
             for branch in branches:
                 conn.execute("""
-                    INSERT OR IGNORE INTO nptel_subject_mapping
-                    (subject_id, branch, semester)
-                    VALUES (?, ?, ?)
-                """, (sid, branch, semester))
+                    INSERT INTO nptel_subject_mapping
+                    (subject_id, branch, semester, session_id)
+                    VALUES (?, ?, ?, ?)
+                """, (sid, branch, semester, session_id))
 
         conn.commit()
         conn.close()
@@ -332,28 +350,30 @@ def map_nptel_subjects():
         return redirect("/manage_subjects")
 
     # =========================
-    # 🔹 GET → LOAD DATA
+    # 🔹 GET → Load ONLY selected subjects
     # =========================
     subjects = conn.execute("""
-        SELECT *
-        FROM subjects_master
-        WHERE is_nptel = 1
-        ORDER BY subject_code
-    """).fetchall()
+        SELECT sm.id, sm.subject_code, sm.subject_name
+        FROM subjects_master sm
+        JOIN nptel_subject_mapping nm
+            ON sm.id = nm.subject_id
+        WHERE nm.session_id = ?
+        GROUP BY sm.id
+        ORDER BY sm.subject_code
+    """, (session_id,)).fetchall()
 
     branches = conn.execute("""
         SELECT name
         FROM branches
-        WHERE hod_id=?
+        WHERE hod_id = ?
     """, (session["user_id"],)).fetchall()
 
-    # 🔥 SESSION‑WISE SEMESTERS
     session_label = session.get("session_label", "").lower()
 
     if "jan" in session_label or "may" in session_label:
-        allowed_semesters = [2, 4, 6, 8]   # EVEN
+        allowed_semesters = [2, 4, 6, 8]
     else:
-        allowed_semesters = [1, 3, 5, 7]   # ODD
+        allowed_semesters = [1, 3, 5, 7]
 
     conn.close()
 
@@ -363,67 +383,58 @@ def map_nptel_subjects():
         branches=branches,
         allowed_semesters=allowed_semesters
     )
-    
+
 @app.route("/save_nptel_subjects", methods=["POST"])
 def save_nptel_subjects():
+
     if not hod_required():
         return redirect("/login")
 
     selected = request.form.getlist("nptel_subjects")
+    session_id = session["active_session_id"]
+
     conn = get_db_connection()
 
-    # 1️⃣ Reset all subjects
-    conn.execute("UPDATE subjects_master SET is_nptel = 0")
+    # 🔴 Delete only this session’s selections
+    conn.execute("""
+        DELETE FROM nptel_subject_mapping
+        WHERE session_id = ?
+    """, (session_id,))
 
-    # 2️⃣ Mark selected as NPTEL
-    if selected:
-        conn.execute(
-            f"""
-            UPDATE subjects_master
-            SET is_nptel = 1
-            WHERE id IN ({",".join(["?"] * len(selected))})
-            """,
-            selected
-        )
-
-        # 3️⃣ 🔥 REMOVE mappings of subjects which are NO LONGER NPTEL
-        conn.execute(
-            f"""
-            DELETE FROM nptel_subject_mapping
-            WHERE subject_id NOT IN ({",".join(["?"] * len(selected))})
-            """,
-            selected
-        )
-    else:
-        # If nothing selected → clear all mappings
-        conn.execute("DELETE FROM nptel_subject_mapping")
+    # 🟢 Insert selected subject ids (without branch & semester)
+    for sid in selected:
+        conn.execute("""
+            INSERT INTO nptel_subject_mapping
+            (subject_id, session_id)
+            VALUES (?, ?)
+        """, (sid, session_id))
 
     conn.commit()
     conn.close()
 
-    return redirect("/manage_subjects")
+    return redirect("/map_nptel_subjects")
 
 @app.route("/get_nptel_subjects")
 def get_nptel_subjects():
-
     branch = request.args.get("branch")
     semester = request.args.get("semester")
+    session_id = session["active_session_id"]
 
     conn = get_db_connection()
 
     subjects = conn.execute("""
-        SELECT DISTINCT
-            sm.id,
-            sm.subject_code,
-            sm.subject_name
-        FROM nptel_subject_mapping nm
-        JOIN subjects_master sm
-            ON sm.id = nm.subject_id
-        WHERE nm.branch = ?
-          AND nm.semester = ?
-          AND sm.is_nptel = 1
-        ORDER BY sm.subject_code
-    """, (branch, semester)).fetchall()
+    SELECT DISTINCT
+        sm.id,
+        sm.subject_code,
+        sm.subject_name
+    FROM nptel_subject_mapping nm
+    JOIN subjects_master sm
+        ON sm.id = nm.subject_id
+    WHERE nm.branch = ?
+      AND nm.semester = ?
+      AND nm.session_id = ?
+    ORDER BY sm.subject_code
+""", (branch, semester, session["active_session_id"])).fetchall()
 
     conn.close()
 
@@ -434,7 +445,6 @@ def get_nptel_subjects():
         }
         for s in subjects
     ])
-
 
 
 @app.route("/get_available_sections")
@@ -2006,6 +2016,8 @@ def manage_subjects():
     # ==================================================
     # ✅ GET → SHOW MAPPED NPTEL SUBJECTS
     # ==================================================
+    session_id = session["active_session_id"]
+
     subjects = conn.execute("""
         SELECT
             nm.semester,
@@ -2016,10 +2028,10 @@ def manage_subjects():
         FROM nptel_subject_mapping nm
         JOIN subjects_master sm
             ON sm.id = nm.subject_id
-        WHERE sm.is_nptel = 1
-        GROUP BY nm.semester, sm.id, sm.subject_code, sm.subject_name
+        WHERE nm.session_id = ?
+        GROUP BY nm.semester, sm.id
         ORDER BY nm.semester, sm.subject_code
-    """).fetchall()
+    """, (session_id,)).fetchall()
 
     conn.close()
     from collections import defaultdict

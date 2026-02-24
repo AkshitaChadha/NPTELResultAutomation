@@ -54,8 +54,7 @@ def init_db():
     CREATE TABLE IF NOT EXISTS subjects_master (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         subject_code TEXT UNIQUE NOT NULL,
-        subject_name TEXT NOT NULL, 
-        is_nptel INTEGER DEFAULT 0
+        subject_name TEXT NOT NULL
     )
     """)
 
@@ -107,14 +106,15 @@ def init_db():
     # NPTEL SUBJECT MAPPING
     # =========================
     cursor.execute("""
-    CREATE TABLE IF NOT EXISTS nptel_subject_mapping (
+CREATE TABLE IF NOT EXISTS nptel_subject_mapping (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    subject_id INTEGER,
+    subject_id INTEGER NOT NULL,
     branch TEXT,
     semester TEXT,
-    UNIQUE(subject_id, branch, semester)
-    )
-    """)
+    session_id INTEGER NOT NULL,
+    UNIQUE(subject_id, branch, semester, session_id)
+)
+""")
     # =========================
     # EVALUATIONS
     # =========================
