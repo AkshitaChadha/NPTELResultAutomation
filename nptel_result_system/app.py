@@ -366,18 +366,16 @@ def map_nptel_subjects():
     
 @app.route("/save_nptel_subjects", methods=["POST"])
 def save_nptel_subjects():
-
     if not hod_required():
         return redirect("/login")
 
     selected = request.form.getlist("nptel_subjects")
-
     conn = get_db_connection()
 
-    # 🔴 Reset all
+    # 1️⃣ Reset all subjects
     conn.execute("UPDATE subjects_master SET is_nptel = 0")
 
-    # 🟢 Mark selected
+    # 2️⃣ Mark selected as NPTEL
     if selected:
         conn.execute(
             f"""
@@ -388,11 +386,22 @@ def save_nptel_subjects():
             selected
         )
 
+        # 3️⃣ 🔥 REMOVE mappings of subjects which are NO LONGER NPTEL
+        conn.execute(
+            f"""
+            DELETE FROM nptel_subject_mapping
+            WHERE subject_id NOT IN ({",".join(["?"] * len(selected))})
+            """,
+            selected
+        )
+    else:
+        # If nothing selected → clear all mappings
+        conn.execute("DELETE FROM nptel_subject_mapping")
+
     conn.commit()
     conn.close()
 
-    # ✅ GO BACK TO MANAGE SUBJECTS
-    return redirect("/map_nptel_subjects")
+    return redirect("/manage_subjects")
 
 @app.route("/get_nptel_subjects")
 def get_nptel_subjects():
@@ -1951,9 +1960,12 @@ def manage_subjects():
 
         if code and name:
             conn.execute(
-                "INSERT INTO subjects_master (subject_code, subject_name) VALUES (?, ?)",
-                (code.strip().upper(), name.strip())
-            )
+            """
+            INSERT OR IGNORE INTO subjects_master (subject_code, subject_name)
+            VALUES (?, ?)
+            """,
+            (code, name)
+        )
             conn.commit()
 
         conn.close()
@@ -1979,7 +1991,11 @@ def manage_subjects():
 
                 if code and name:
                     conn.execute(
-                        "INSERT INTO subjects_master (subject_code, subject_name) VALUES (?, ?)",
+                        """
+                        INSERT OR IGNORE INTO subjects_master
+                        (subject_code, subject_name)
+                        VALUES (?, ?)
+                        """,
                         (code, name)
                     )
 
@@ -1987,7 +2003,6 @@ def manage_subjects():
 
         conn.close()
         return redirect("/mark_nptel_subjects")
-
     # ==================================================
     # ✅ GET → SHOW MAPPED NPTEL SUBJECTS
     # ==================================================
