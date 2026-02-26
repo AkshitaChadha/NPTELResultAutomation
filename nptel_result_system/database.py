@@ -135,6 +135,29 @@ CREATE TABLE IF NOT EXISTS nptel_subject_mapping (
 
     conn.commit()
 
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS evaluation_students (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    evaluation_id INTEGER,
+    sno TEXT,
+    roll_no TEXT,
+    student_name TEXT,
+    registered TEXT,
+    assignment_marks REAL,
+    attendance TEXT,
+    external_marks REAL,
+    track TEXT,
+    result TEXT,
+    FOREIGN KEY (evaluation_id) REFERENCES evaluations(id)
+)
+    """)
+
+    conn.commit()
+
+
+    
+
     # =========================
     # EVALUATION RECORDS (Per Student Lock)
     # =========================

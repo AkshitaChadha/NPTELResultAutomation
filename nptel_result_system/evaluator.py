@@ -76,7 +76,6 @@ def evaluate_student(student):
         student["Result"] = "PASS"
     else:
         student["Result"] = "FAIL"
-
-    student["Track"] = "NPTEL"
+        student["Track"] = "NPTEL"
 
     return student

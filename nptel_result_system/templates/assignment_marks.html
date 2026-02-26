@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Assignment Marks</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<div class="navbar">
+    <h3>NPTEL Result System</h3>
+    <div class="nav-actions">
+        <a href="/teacher_dashboard">
+            <button class="secondary-btn">Dashboard</button>
+        </a>
+        <a href="/logout">
+            <button class="primary-btn">Logout</button>
+        </a>
+    </div>
+</div>
+
+<div class="container">
+
+<h2 class="page-title">Enter Assignment Marks (Out of 25)</h2>
+
+<form method="POST">
+
+    <input type="hidden" name="subject_id" value="{{ session.get('active_subject') }}">
+
+<table class="styled-table">
+
+<tr>
+<th>S.No</th>
+<th>University Roll No</th>
+<th>Student Name</th>
+<th>Registered</th>
+<th>Assignment (25)</th>
+</tr>
+
+{% for row in data %}
+<tr>
+
+<td>{{ row.get("SNo","") }}</td>
+
+<td>{{ row.get("University Roll Number","") }}</td>
+
+<td>{{ row.get("Student Name","") }}</td>
+
+<td>{{ row.get("Registered","") }}</td>
+
+<td>
+    {% if row.get("Registered") == "Not Registered" %}
+        <input type="number" value="0" readonly>
+    {% else %}
+        <input type="number"
+               name="assignment_{{ row.get('University Roll Number') }}"
+               min="0"
+               max="25"
+               required>
+    {% endif %}
+</td>
+
+</tr>
+{% endfor %}
+
+</table>
+
+<br>
+<button type="submit" class="primary-btn">Save & Continue</button>
+
+</form>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Edit Unlocked Students</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+
+    <style>
+        .faded {
+            background-color: #f2f2f2;
+            opacity: 0.6;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+
+<!-- ===== NAVBAR ===== -->
+<div class="navbar">
+    <h3>NPTEL Result System</h3>
+
+    <div class="nav-actions">
+
+        {% if session.role == "HOD" %}
+        <a href="/hod_dashboard">
+            <button class="secondary-btn">Dashboard</button>
+        </a>
+        {% elif session.role == "TEACHER" %}
+        <a href="/teacher_dashboard">
+            <button class="secondary-btn">Dashboard</button>
+        </a>
+        {% endif %}
+
+        <a href="/logout">
+            <button class="primary-btn">Logout</button>
+        </a>
+
+    </div>
+</div>
+
+
+<div class="container">
+<h2>Edit Unlocked Students</h2>
+
+<form method="POST">
+
+<table class="styled-table">
+<tr>
+    <th>Roll</th>
+    <th>Name</th>
+    <th>Registered</th>
+    <th>Assignment</th>
+    <th>NPTEL External</th>
+    <th>College External</th>
+</tr>
+
+{% for student in data %}
+<tr>
+
+    <!-- Roll -->
+    <td>{{ student['University Roll Number'] }}</td>
+
+    <!-- Name -->
+    <td>{{ student['Student Name'] }}</td>
+
+    <!-- Registered -->
+    <td>
+        <select name="registered_{{ student['University Roll Number'] }}">
+            <option value="Registered"
+                {% if student.get('Registered') == "Registered" %}selected{% endif %}>
+                Registered
+            </option>
+            <option value="Not Registered"
+                {% if student.get('Registered') == "Not Registered" %}selected{% endif %}>
+                Not Registered
+            </option>
+        </select>
+    </td>
+
+    <!-- Assignment -->
+    <td>
+        <input type="number"
+               name="assignment_{{ student['University Roll Number'] }}"
+               value="{{ student.get('Assignment Marks', '') }}"
+               min="0"
+               max="25"
+               step="0.5">
+    </td>
+
+    <!-- NPTEL External -->
+    <td>
+        <input type="number"
+               name="nptel_{{ student['University Roll Number'] }}"
+               value="{{ student.get('NPTEL External Marks', '') }}"
+               min="0"
+               max="75"
+               step="1">
+    </td>
+
+    <!-- College External -->
+    <td>
+        <input type="number"
+               name="college_{{ student['University Roll Number'] }}"
+               value="{{ student.get('College_External_Raw', '') }}"
+               min="0"
+               max="100"
+               step="1"
+               class="{% if student.get('Track') == 'NPTEL' %}faded{% endif %}"
+               {% if student.get('Track') == 'NPTEL' %}readonly{% endif %}>
+    </td>
+
+</tr>
+{% endfor %}
+</table>
+
+<br>
+<button type="submit" class="primary-btn">
+Save Changes & Re-evaluate
+</button>
+
+</form>
+</div>
+
+</body>
+</html>

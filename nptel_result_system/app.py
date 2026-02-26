@@ -27,13 +27,6 @@ from datetime import timedelta
 app.secret_key = "super_strong_random_secret_987654321"
 app.permanent_session_lifetime = timedelta(minutes=30)
 
-
-ORIGINAL_DATA = []
-NPTEL_LIST = []
-COLLEGE_LIST = []
-FINAL_RESULTS = []
-
-
 @app.route("/")
 def home():
     return redirect("/login")
@@ -42,92 +35,37 @@ def home():
 @app.route("/upload", methods=["GET", "POST"])
 def upload():
 
-    global ORIGINAL_DATA, NPTEL_LIST, COLLEGE_LIST
+    global ORIGINAL_DATA
 
     if "user_id" not in session:
         return redirect("/login")
+    
+    subject_id = request.args.get("subject_id")
 
-    # Ensure session selected
+    if subject_id:
+        session["active_subject"] = subject_id
+
+    if "active_subject" not in session:
+        return "ERROR: active_subject missing in session"
+
+    # Ensure session exists
     if "active_session_id" not in session:
         session["session_label"] = get_current_session()
         session["active_session_id"] = get_or_create_session(
             session["session_label"]
         )
 
-    active_session_id = session["active_session_id"]
-
     if request.method == "GET":
+        return render_template("upload.html")
 
-        subject_id = request.args.get("subject_id")
+    # ===============================
+    # 🔵 POST → Upload Student List
+    # ===============================
+    file = request.files.get("file")
 
-        if subject_id:
-            session["active_subject"] = subject_id
+    if not file:
+        return "No file uploaded"
 
-        conn = get_db_connection()
-
-        subject = None
-        evaluation = None
-
-        if session.get("active_subject"):
-
-            subject = conn.execute(
-                "SELECT * FROM subjects WHERE id=?",
-                (session["active_subject"],)
-            ).fetchone()
-
-            evaluation = conn.execute(
-                "SELECT * FROM evaluations WHERE subject_id=? AND session_id=?",
-                (session["active_subject"], active_session_id)
-            ).fetchone()
-
-        if evaluation and evaluation["stage"] == "college_done":
-
-            import json
-            ORIGINAL_DATA = json.loads(evaluation["data_json"])
-
-            NPTEL_LIST = []
-            COLLEGE_LIST = []
-
-            for student in ORIGINAL_DATA:
-                if student.get("Track") in ["College Evaluated", "NPTEL"]:
-                    NPTEL_LIST.append(student)
-                elif student.get("Track") == "College":
-                    COLLEGE_LIST.append(student)
-
-            # 🔵 Count partial unlock
-            unlocked_count = conn.execute("""
-                SELECT COUNT(*) as total
-                FROM evaluation_records
-                WHERE evaluation_id=? AND locked=0
-            """, (evaluation["id"],)).fetchone()["total"]
-
-            can_download = (
-                evaluation["stage"] == "college_done"
-                and evaluation["locked"] == 1
-                and unlocked_count == 0
-            )
-
-            conn.close()   # ✅ CLOSE AFTER ALL QUERIES
-
-            return render_template(
-                "result.html",
-                data=NPTEL_LIST,
-                college_list=COLLEGE_LIST,
-                stage=evaluation["stage"],
-                evaluation_locked=(evaluation["locked"] == 1),
-                unlocked_count=unlocked_count,
-                can_download=can_download,
-                evaluation_id=evaluation["id"]
-            )
-
-        conn.close()   # ✅ CLOSE HERE if not returning above
-
-        return render_template("upload.html", subject=subject)
-
-        
-
-    # POST (file upload)
-    file = request.files["file"]
     filename = file.filename.lower()
 
     if filename.endswith(".xlsx"):
@@ -135,12 +73,183 @@ def upload():
     elif filename.endswith(".csv"):
         df = pd.read_csv(file)
     else:
-        return "Unsupported file format."
+        return "Unsupported file format"
 
-    df.columns = df.columns.str.strip()
-    ORIGINAL_DATA = df.to_dict(orient="records")
+    df.columns = df.columns.str.strip().str.lower()
 
-    return render_template("preview.html", data=ORIGINAL_DATA)
+    # ✅ Validate format
+    required_cols = ["sno", "university roll number", "student name"]
+
+    if list(df.columns) != required_cols:
+        return "Invalid format. Required columns: sno, university roll number, student name"
+
+    ORIGINAL_DATA = []
+
+    for _, row in df.iterrows():
+        ORIGINAL_DATA.append({
+            "SNo": row["sno"],
+            "University Roll Number": str(row["university roll number"]).strip(),
+            "Student Name": row["student name"],
+            "Registered": "Registered"   # default
+        })
+
+    return render_template("registration_preview.html", data=ORIGINAL_DATA)
+
+
+@app.route("/save_registration", methods=["POST"])
+def save_registration():
+
+    if "user_id" not in session:
+        return redirect("/login")
+
+    subject_id = session.get("active_subject")
+    active_session_id = session.get("active_session_id")
+
+    if not subject_id or not active_session_id:
+        return "ERROR: session missing"
+
+    rolls = request.form.getlist("roll[]")
+    statuses = request.form.getlist("registered[]")
+
+    import json
+    conn = get_db_connection()
+
+    # Load ORIGINAL_DATA from memory (first step)
+    global ORIGINAL_DATA
+
+    for i in range(len(rolls)):
+        for student in ORIGINAL_DATA:
+            if student["University Roll Number"] == rolls[i]:
+                student["Registered"] = statuses[i]
+
+    # 🔥 CREATE EVALUATION ROW HERE
+    existing = conn.execute("""
+        SELECT id FROM evaluations
+        WHERE subject_id=? AND session_id=?
+    """, (subject_id, active_session_id)).fetchone()
+
+    if existing:
+        conn.execute("""
+            UPDATE evaluations
+            SET data_json=?,
+                stage='registration_done',
+                created_at=CURRENT_TIMESTAMP
+            WHERE id=?
+        """, (json.dumps(ORIGINAL_DATA), existing["id"]))
+    else:
+        conn.execute("""
+            INSERT INTO evaluations
+            (subject_id, teacher_id, session_id, data_json, stage, locked)
+            VALUES (?, ?, ?, ?, ?, 0)
+        """, (
+            subject_id,
+            session["user_id"],
+            active_session_id,
+            json.dumps(ORIGINAL_DATA),
+            "registration_done"
+        ))
+
+    conn.commit()
+    conn.close()
+
+    return redirect("/save_assignment")
+
+@app.route("/save_assignment", methods=["GET", "POST"])
+def save_assignment():
+
+    if "user_id" not in session:
+        return redirect("/login")
+
+    subject_id = session.get("active_subject")
+    active_session_id = session.get("active_session_id")
+
+    if not subject_id or not active_session_id:
+        return "ERROR: session missing"
+
+    conn = get_db_connection()
+
+    evaluation = conn.execute("""
+        SELECT id, data_json
+        FROM evaluations
+        WHERE subject_id=? AND session_id=?
+        ORDER BY id DESC
+        LIMIT 1
+    """, (subject_id, active_session_id)).fetchone()
+
+    if not evaluation:
+        conn.close()
+        return redirect(f"/upload?subject_id={subject_id}")
+
+    import json
+    data = json.loads(evaluation["data_json"])
+
+    if request.method == "GET":
+        conn.close()
+        return render_template("assignment_marks.html", data=data)
+
+    for student in data:
+
+        roll = str(student.get("University Roll Number")).strip()
+        registered = student.get("Registered", "")
+
+        if registered == "Not Registered":
+            student["Assignment Marks"] = 0
+            continue
+
+        mark = request.form.get(f"assignment_{roll}", "").strip()
+
+        try:
+            mark = float(mark)
+            if 0 <= mark <= 25:
+                student["Assignment Marks"] = mark
+            else:
+                student["Assignment Marks"] = 0
+        except:
+            student["Assignment Marks"] = 0
+
+    conn.execute("""
+        UPDATE evaluations
+        SET data_json=?,
+            stage='assignment_done',
+            created_at=CURRENT_TIMESTAMP
+        WHERE id=?
+    """, (json.dumps(data), evaluation["id"]))
+
+    conn.commit()
+    conn.close()
+
+    return redirect("/external_marks")
+
+
+@app.route("/external_marks", methods=["GET"])
+def external_marks():
+    if "user_id" not in session:
+        return redirect("/login")
+
+    subject_id = session.get("active_subject")
+    active_session_id = session.get("active_session_id")
+
+    if not subject_id or not active_session_id:
+        return redirect("/teacher_dashboard")
+
+    conn = get_db_connection()
+    evaluation = conn.execute("""
+        SELECT data_json
+        FROM evaluations
+        WHERE subject_id=? AND session_id=?
+        ORDER BY id DESC
+        LIMIT 1
+    """, (subject_id, active_session_id)).fetchone()
+
+    conn.close()
+
+    if not evaluation:
+        return redirect(f"/upload?subject_id={subject_id}")
+
+    import json
+    data = json.loads(evaluation["data_json"]) if evaluation["data_json"] else []
+
+    return render_template("external_marks.html", data=data)
 
 @app.route("/upload_subjects", methods=["GET", "POST"])
 def upload_subjects():
@@ -222,93 +331,7 @@ def mark_nptel_subjects():
         subjects=subjects
     )
 
-""" @app.route("/enter_internal_marks", methods=["GET", "POST"])
-def enter_internal_marks():
-
-    if "user_id" not in session:
-        return redirect("/login")
-
-    data = session.get("ORIGINAL_DATA")
-    if not data:
-        return redirect("/upload")
-
-    if request.method == "POST":
-        for row in data:
-            roll = row["University Roll Number"]
-            mark = request.form.get(f"internal_{roll}")
-
-            try:
-                row["Internal Marks"] = float(mark)
-            except:
-                row["Internal Marks"] = 0
-
-        session["ORIGINAL_DATA"] = data
-        return redirect("/enter_external_marks")
-
-    return render_template("enter_internal_marks.html", data=data)
-
-@app.route("/enter_external_marks", methods=["GET", "POST"])
-def enter_external_marks():
-
-    if "user_id" not in session:
-        return redirect("/login")
-
-    data = session.get("ORIGINAL_DATA")
-    if not data:
-        return redirect("/upload")
-
-    if request.method == "POST":
-        file = request.files.get("file")
-
-        if not file:
-            return "No file uploaded"
-
-        df = pd.read_excel(file)
-        df.columns = df.columns.str.strip()
-
-        REQUIRED = ["University Roll Number", "Marks"]
-        if list(df.columns) != REQUIRED:
-            return "Invalid format. Required columns: University Roll Number, Marks"
-
-        # Map marks
-        roll_map = {
-            str(s["University Roll Number"]).strip(): s
-            for s in data
-        }
-
-        for _, row in df.iterrows():
-            roll = str(row["University Roll Number"]).strip()
-            marks = row["Marks"]
-
-            if roll in roll_map:
-                try:
-                    roll_map[roll]["NPTEL External Marks"] = float(marks)
-                except:
-                    roll_map[roll]["NPTEL External Marks"] = 0
-
-        session["ORIGINAL_DATA"] = data
-
-        return redirect("/evaluate")
-
-    return render_template("enter_external_marks.html", data=data)
-
-
-@app.route("/save_external_marks", methods=["POST"])
-def save_external_marks():
-    data = session.get("ORIGINAL_DATA")
-
-    df = pd.read_excel(request.files["file"])
-    df.columns = df.columns.str.strip()
-
-    for _, row in df.iterrows():
-        roll = str(row["University Roll Number"]).strip()
-        for s in ORIGINAL_DATA:
-            if s["University Roll Number"] == roll:
-                s["NPTEL External Marks"] = float(row["Marks"])
-                break
-
-    return redirect("/evaluate") """
-    
+   
 @app.route("/map_nptel_subjects", methods=["GET", "POST"])
 def map_nptel_subjects():
 
@@ -472,227 +495,23 @@ def get_available_sections():
 
     return jsonify(available_sections)
 
-@app.route("/start_again/<int:subject_id>")
-def start_again(subject_id):
 
+
+@app.route("/evaluate")
+def evaluate():
     if "user_id" not in session:
         return redirect("/login")
 
-    active_session_id = session["active_session_id"]
-    conn = get_db_connection()
-
-    locked = conn.execute("""
-        SELECT locked
-        FROM evaluations
-        WHERE subject_id=? AND session_id=?
-        ORDER BY id DESC
-        LIMIT 1
-    """, (subject_id, active_session_id)).fetchone()
-
-    if locked and locked["locked"] == 1:
-        conn.close()
-        return "Marks are locked. You cannot re-evaluate."
-
-    conn.execute("""
-        DELETE FROM evaluations
-        WHERE subject_id=? AND session_id=?
-    """, (subject_id, active_session_id))
-
-    conn.commit()
-    conn.close()
-
-    session["active_subject"] = subject_id
-    return redirect("/upload")
-
-
-@app.route("/evaluate", methods=["POST"])
-def evaluate():
-
-    global ORIGINAL_DATA, NPTEL_LIST, COLLEGE_LIST
-
     subject_id = session.get("active_subject")
+    active_session_id = session.get("active_session_id")
 
-    rolls = request.form.getlist("roll[]")
-    registered_list = request.form.getlist("registered[]")
-
-    # 🔹 Update registration status from preview
-    if rolls:
-        roll_map = {
-            str(s["University Roll Number"]).strip(): s
-            for s in ORIGINAL_DATA
-        }
-
-        for i in range(len(rolls)):
-            roll = str(rolls[i]).strip()
-
-            if roll not in roll_map:
-                continue
-
-            student = roll_map[roll]
-            student["Registered for NPTEL"] = registered_list[i]
-
-    NPTEL_LIST = []
-    COLLEGE_LIST = []
-
-    for student in ORIGINAL_DATA:
-
-        # Skip already college evaluated
-        if student.get("Track") in ["College Evaluated", "NPTEL"]:
-            NPTEL_LIST.append(student)
-            continue
-
-        registered = str(student.get("Registered for NPTEL", "")).strip().lower()
-        is_registered = registered == "registered"
-
-        # ===============================
-        # CASE 1: NOT REGISTERED
-        # ===============================
-        if not is_registered:
-            student["Track"] = "College"
-            student["Result"] = "College Exam Required"
-            COLLEGE_LIST.append(student)
-            continue
-
-        # ===============================
-        # CASE 2: REGISTERED
-        # ===============================
-        try:
-            assignment = float(student.get("Assignment Marks", 0))
-            external = float(student.get("NPTEL External Marks", 0))
-        except:
-            student["Track"] = "College"
-            student["Result"] = "College Exam Required"
-            COLLEGE_LIST.append(student)
-            continue
-
-        # Validate limits
-        if assignment > 25 or external > 75:
-            student["Track"] = "College"
-            student["Result"] = "Invalid Marks"
-            COLLEGE_LIST.append(student)
-            continue
-
-        result = evaluate_student(student)
-
-        # If student failed NPTEL → College
-        if result["Result"] == "FAIL":
-            result["Track"] = "College"
-            result["Result"] = "College Exam Required"
-            COLLEGE_LIST.append(result)
-        else:
-            NPTEL_LIST.append(result)
-
-    if subject_id:
-
-        import json
-        conn = get_db_connection()
-
-        active_session_id = session["active_session_id"]
-
-        existing = conn.execute(
-            "SELECT id FROM evaluations WHERE subject_id=? AND session_id=?",
-            (subject_id, active_session_id)
-        ).fetchone()
-
-        if existing:
-            conn.execute("""
-                UPDATE evaluations
-                SET data_json=?,
-                    stage='college_pending',
-                    created_at=CURRENT_TIMESTAMP
-                WHERE subject_id=? AND session_id=?
-            """, (
-                json.dumps(ORIGINAL_DATA),
-                subject_id,
-                active_session_id
-            ))
-        else:
-            conn.execute("""
-                INSERT INTO evaluations
-                (subject_id, teacher_id, session_id, data_json, stage)
-                VALUES (?, ?, ?, ?, ?)
-            """, (
-                subject_id,
-                session["user_id"],
-                active_session_id,
-                json.dumps(ORIGINAL_DATA),
-                "college_pending"
-            ))
-
-        conn.commit()
-        conn.close()
-
-    stage_value = "college_done" if len(COLLEGE_LIST) == 0 else "college_pending"
-
-    conn = get_db_connection()
-
-    row = conn.execute("""
-        SELECT locked
-        FROM evaluations
-        WHERE subject_id=? AND session_id=?
-        ORDER BY id DESC
-        LIMIT 1
-    """, (subject_id, session["active_session_id"])).fetchone()
-
-    conn.close()
-
-    evaluation_locked = row is not None and row["locked"] == 1
-
+    if not subject_id or not active_session_id:
+        return redirect("/teacher_dashboard")
 
     conn = get_db_connection()
 
     evaluation = conn.execute("""
-        SELECT id, locked
-        FROM evaluations
-        WHERE subject_id=? AND session_id=?
-        ORDER BY id DESC
-        LIMIT 1
-    """, (subject_id, session["active_session_id"])).fetchone()
-
-    unlocked_count = 0
-    can_download = False
-
-    if evaluation:
-        unlocked_count = conn.execute("""
-            SELECT COUNT(*) as total
-            FROM evaluation_records
-            WHERE evaluation_id=? AND locked=0
-        """, (evaluation["id"],)).fetchone()["total"]
-
-        can_download = (
-            stage_value == "college_done"
-            and evaluation["locked"] == 1
-            and unlocked_count == 0
-        )
-
-    conn.close()
-
-    return render_template(
-        "result.html",
-        data=NPTEL_LIST,
-        college_list=COLLEGE_LIST,
-        stage=stage_value,
-        evaluation_locked=evaluation["locked"] == 1 if evaluation else False,
-        unlocked_count=unlocked_count,
-        can_download=can_download,
-        evaluation_id=evaluation["id"] if evaluation else None
-    )
-
-
-
-@app.route("/edit_college_marks")
-def edit_college_marks():
-
-    if "user_id" not in session or session["role"] != "TEACHER":
-        return redirect("/login")
-
-    subject_id = session.get("active_subject")
-    active_session_id = session["active_session_id"]
-
-    conn = get_db_connection()
-
-    evaluation = conn.execute("""
-        SELECT id, locked, data_json
+        SELECT *
         FROM evaluations
         WHERE subject_id=? AND session_id=?
         ORDER BY id DESC
@@ -701,64 +520,211 @@ def edit_college_marks():
 
     if not evaluation:
         conn.close()
-        return "Evaluation not found."
-
-    # 🔴 ONLY allow when fully unlocked
-    if evaluation["locked"] == 1:
-        conn.close()
-        return "Marks are locked. Cannot update."
+        return redirect(f"/upload?subject_id={subject_id}")
 
     import json
-    data = json.loads(evaluation["data_json"])
+    data = json.loads(evaluation["data_json"]) if evaluation["data_json"] else []
 
-    college_students = [
-        s for s in data
-        if s.get("Track") in ["College", "College Evaluated"]
-    ]
+    nptel_list = []
+    college_list = []
+
+    for student in data:
+
+        # Already fully evaluated students
+        if student.get("Track") in ["College Evaluated", "NPTEL"]:
+            nptel_list.append(student)
+            continue
+
+        registered = str(student.get("Registered", "")).strip().lower()
+        attendance = str(student.get("Attendance", "Present")).strip()
+
+        if registered != "registered" or attendance == "Absent":
+            student["Track"] = "College"
+            student["Result"] = "College Exam Required"
+            college_list.append(student)
+            continue
+
+        try:
+            student.setdefault("Assignment Marks", 0)
+            student.setdefault("NPTEL External Marks", 0)
+
+            result = evaluate_student(student)
+
+        except:
+            student["Track"] = "College"
+            student["Result"] = "Invalid Marks"
+            college_list.append(student)
+            continue
+
+        if result.get("Result") == "FAIL":
+            student["Track"] = "College"
+            student["Result"] = "College Exam Required"
+            college_list.append(student)
+        else:
+            result["Track"] = "NPTEL"
+            nptel_list.append(result)
+
+    # ✅ FINAL MERGE LOGIC
+    stage_value = "college_done" if len(college_list) == 0 else "college_pending"
+
+    conn.execute("""
+        UPDATE evaluations
+        SET data_json=?,
+            stage=?,
+            created_at=CURRENT_TIMESTAMP
+        WHERE id=?
+    """, (
+        json.dumps(data),
+        stage_value,
+        evaluation["id"]
+    ))
+
+    conn.commit()
+
+    unlocked_count = conn.execute("""
+        SELECT COUNT(*) as total
+        FROM evaluation_records
+        WHERE evaluation_id=? AND locked=0
+    """, (evaluation["id"],)).fetchone()["total"]
+
+    can_download = (
+        evaluation["locked"] == 1
+        and unlocked_count == 0
+        and stage_value == "college_done"
+    )
 
     conn.close()
 
     return render_template(
-        "edit_college.html",
-        data=college_students
+        "result.html",
+        data=nptel_list,
+        college_list=college_list,
+        stage=stage_value,
+        evaluation_locked=(evaluation["locked"] == 1),
+        unlocked_count=unlocked_count,
+        can_download=can_download,
+        evaluation_id=evaluation["id"]
     )
 
+@app.route("/save_external_marks", methods=["POST"])
+def save_external_marks():
+    if "user_id" not in session:
+        return redirect("/login")
 
+    subject_id = session.get("active_subject")
+    active_session_id = session.get("active_session_id")
 
+    if not subject_id or not active_session_id:
+        return redirect("/teacher_dashboard")
+
+    conn = get_db_connection()
+    evaluation = conn.execute("""
+        SELECT id, data_json
+        FROM evaluations
+        WHERE subject_id=? AND session_id=?
+        ORDER BY id DESC
+        LIMIT 1
+    """, (subject_id, active_session_id)).fetchone()
+
+    if not evaluation:
+        conn.close()
+        return redirect(f"/upload?subject_id={subject_id}")
+
+    import json
+    data = json.loads(evaluation["data_json"]) if evaluation["data_json"] else []
+
+    # 🔥 Update marks safely
+    for student in data:
+        roll = str(student.get("University Roll Number", "")).strip()
+        registered = student.get("Registered", "")
+        status = request.form.get(f"status_{roll}", "Present")
+
+        if registered == "Not Registered":
+            student["NPTEL External Marks"] = 0
+            student["Attendance"] = "Not Registered"
+            continue
+
+        if status == "Absent":
+            student["NPTEL External Marks"] = 0
+            student["Attendance"] = "Absent"
+            continue
+
+        mark_input = request.form.get(f"external_{roll}", "").strip()
+
+        try:
+            mark = float(mark_input)
+            if 0 <= mark <= 75:
+                student["NPTEL External Marks"] = mark
+            else:
+                student["NPTEL External Marks"] = 0
+        except:
+            student["NPTEL External Marks"] = 0
+
+        student["Attendance"] = "Present"
+
+    conn.execute("""
+        UPDATE evaluations
+        SET data_json=?,
+            stage='external_saved',
+            created_at=CURRENT_TIMESTAMP
+        WHERE id=?
+    """, (json.dumps(data), evaluation["id"]))
+
+    conn.commit()
+    conn.close()
+
+    return redirect(url_for("evaluate"))
 
 import json
 
 @app.route("/final_results")
 def final_results():
+    if "user_id" not in session:
+        return redirect("/login")
 
-    data = session.get("ORIGINAL_DATA")
+    subject_id = session.get("active_subject")
+    active_session_id = session.get("active_session_id")
+
+    conn = get_db_connection()
+
+    evaluation = conn.execute("""
+        SELECT *
+        FROM evaluations
+        WHERE subject_id=? AND session_id=?
+        ORDER BY id DESC
+        LIMIT 1
+    """, (subject_id, active_session_id)).fetchone()
+
+    if not evaluation:
+        conn.close()
+        return redirect("/teacher_dashboard")
+
+    import json
+    data = json.loads(evaluation["data_json"])
 
     final_list = []
     college_pending = []
 
-    for student in ORIGINAL_DATA:
-
-        # Finalised students
+    for student in data:
         if student.get("Track") in ["College Evaluated", "NPTEL"]:
             final_list.append(student)
-
-        # Still pending college exam
         elif student.get("Track") == "College":
             college_pending.append(student)
 
     stage_value = "college_done" if len(college_pending) == 0 else "college_pending"
 
-    return render_template(
-    "result.html",
-    data=final_list,
-    college_list=college_pending,
-    stage=stage_value,
-    evaluation_locked=False,
-    unlocked_count=0,
-    can_download=False,
-    evaluation_id=None
-)
+    conn.close()
 
+    return render_template(
+        "result.html",
+        data=final_list,
+        college_list=college_pending,
+        stage=stage_value,
+        evaluation_locked=(evaluation["locked"] == 1),
+        unlocked_count=0,
+        can_download=False,
+        evaluation_id=evaluation["id"]
+    )
 
 
 
@@ -831,37 +797,47 @@ def download_pdf(eval_id):
 
 @app.route("/save_college_marks", methods=["POST"])
 def save_college_marks():
-
-    data = session.get("ORIGINAL_DATA")
+    if "user_id" not in session:
+        return redirect("/login")
 
     subject_id = session.get("active_subject")
+    active_session_id = session.get("active_session_id")
 
-    for student in ORIGINAL_DATA:
+    conn = get_db_connection()
+
+    evaluation = conn.execute("""
+        SELECT id, data_json
+        FROM evaluations
+        WHERE subject_id=? AND session_id=?
+        ORDER BY id DESC
+        LIMIT 1
+    """, (subject_id, active_session_id)).fetchone()
+
+    if not evaluation:
+        conn.close()
+        return "Evaluation not found."
+
+    import json
+    data = json.loads(evaluation["data_json"])
+
+    for student in data:
 
         if student.get("Track") not in ["College", "College Evaluated"]:
             continue
 
         roll = str(student["University Roll Number"]).strip()
-
         status = request.form.get(f"status_{roll}", "Present").strip()
         external_input = request.form.get(f"external_{roll}", "").strip()
 
-        # =========================
-        # 🔴 ABSENT CASE
-        # =========================
         if status.upper() == "ABSENT":
-
             student["College_External_Raw"] = "ABSENT"
-            student["Internal_Final"] = "0 (FAIL)"
-            student["External_Final"] = "ABSENT"
+            student["Internal_Final"] = 0
+            student["External_Final"] = 0
             student["Total"] = 0
             student["Result"] = "FAIL"
             student["Track"] = "College Evaluated"
             continue
 
-        # =========================
-        # 🔵 VALIDATION
-        # =========================
         try:
             numeric_external = float(external_input)
         except:
@@ -872,118 +848,62 @@ def save_college_marks():
 
         student["College_External_Raw"] = numeric_external
 
-        registered = str(student.get("Registered for NPTEL", "")).strip().lower()
+        final_internal = custom_round(numeric_external * 0.4)
+        final_external = custom_round(numeric_external * 0.6)
 
-        # ==================================================
-        # 🔵 STEP 1: Convert raw marks (NO ROUNDING)
-        # ==================================================
-        if registered != "registered":
-            # Direct 100 mark paper
-            base_internal = numeric_external * 0.4
-            base_external = numeric_external * 0.6
-        else:
-            try:
-                assignment = float(student.get("Assignment Marks", 0))
-            except:
-                assignment = 0
-
-            # Convert assignment 25 → 40 (NO ROUND)
-            assignment_40 = (assignment / 25) * 40
-
-            # numeric_external already out of 100
-            base_internal = assignment_40
-            base_external = numeric_external
-
-        # ==================================================
-        # 🔵 STEP 2: Make combined total (OUT OF 100)
-        # ==================================================
-        combined_total = base_internal + base_external
-
-        # ==================================================
-        # 🔵 STEP 3: Re-divide 100 → 40/60 (ROUND ONLY HERE)
-        # ==================================================
-        final_internal = custom_round(combined_total * 0.4)
-        final_external = custom_round(combined_total * 0.6)
-
-        total = final_internal + final_external
-
-        # ==================================================
-        # 🔵 PASS / FAIL CHECK
-        # ==================================================
-        internal_status = ""
-        external_status = ""
-
-        if final_internal < 16:
-            internal_status = " (FAIL)"
-
-        if final_external < 24:
-            external_status = " (FAIL)"
-
-        student["Internal_Final"] = f"{final_internal}{internal_status}"
-        student["External_Final"] = f"{final_external}{external_status}"
-        student["Total"] = total
-
-        if final_internal >= 16 and final_external >= 24:
-            student["Result"] = "PASS"
-        else:
-            student["Result"] = "FAIL"
-
+        student["Internal_Final"] = final_internal
+        student["External_Final"] = final_external
+        student["Total"] = final_internal + final_external
+        student["Result"] = "PASS" if final_internal >= 16 and final_external >= 24 else "FAIL"
         student["Track"] = "College Evaluated"
 
-    # ==================================================
-    # 🔵 SAVE TO DATABASE
-    # ==================================================
-    if subject_id:
+    # SAVE BACK
+    conn.execute("""
+        UPDATE evaluations
+        SET data_json=?,
+            stage='college_done',
+            created_at=CURRENT_TIMESTAMP
+        WHERE id=?
+    """, (
+        json.dumps(data),
+        evaluation["id"]
+    ))
 
-        import json
-        conn = get_db_connection()
-        active_session_id = session["active_session_id"]
+    conn.commit()
+    conn.close()
 
-        existing = conn.execute(
-            "SELECT id FROM evaluations WHERE subject_id=? AND session_id=?",
-            (subject_id, active_session_id)
-        ).fetchone()
+    return redirect(url_for("evaluate"))
 
-        if existing:
-            conn.execute("""
-                UPDATE evaluations
-                SET data_json=?,
-                    stage='college_done',
-                    created_at=CURRENT_TIMESTAMP
-                WHERE subject_id=? AND session_id=?
-            """, (
-                json.dumps(ORIGINAL_DATA),
-                subject_id,
-                active_session_id
-            ))
-        else:
-            conn.execute("""
-                INSERT INTO evaluations
-                (subject_id, teacher_id, session_id, data_json, stage)
-                VALUES (?, ?, ?, ?, ?)
-            """, (
-                subject_id,
-                session["user_id"],
-                active_session_id,
-                json.dumps(ORIGINAL_DATA),
-                "college_done"
-            ))
+@app.route("/download_college_list/<int:eval_id>")
+def download_college_list(eval_id):
 
-        conn.commit()
-        conn.close()
+    if "user_id" not in session:
+        return redirect("/login")
 
-    return redirect(url_for("final_results"))
+    conn = get_db_connection()
+    evaluation = conn.execute("""
+        SELECT data_json
+        FROM evaluations
+        WHERE id=?
+    """, (eval_id,)).fetchone()
 
+    conn.close()
 
-@app.route("/download_college_list")
-def download_college_list():
+    if not evaluation:
+        return "Evaluation not found."
 
-    data = session.get("ORIGINAL_DATA")
+    import json
+    data = json.loads(evaluation["data_json"])
 
-    if not COLLEGE_LIST:
+    college_students = [
+        s for s in data
+        if s.get("Track") in ["College", "College Evaluated"]
+    ]
+
+    if not college_students:
         return "No college exam students available."
 
-    df = pd.DataFrame(COLLEGE_LIST)
+    df = pd.DataFrame(college_students)
 
     buffer = io.BytesIO()
     df.to_excel(buffer, index=False)
@@ -994,6 +914,7 @@ def download_college_list():
         as_attachment=True,
         download_name="college_exam_students.xlsx"
     )
+
 @app.route("/login", methods=["GET","POST"])
 def login():
 
@@ -1311,14 +1232,12 @@ def complete_unlock():
 
     conn = get_db_connection()
 
-    # Unlock master evaluation
     conn.execute("""
         UPDATE evaluations
         SET locked = 0
         WHERE id=?
     """, (evaluation_id,))
 
-    # Unlock all student records
     conn.execute("""
         UPDATE evaluation_records
         SET locked = 0
@@ -1398,18 +1317,23 @@ def unlock_selected():
 
     return redirect("/hod_dashboard")
 
-@app.route("/edit_unlocked/<int:subject_id>")
-def edit_unlocked(subject_id):
+@app.route("/edit_college_marks")
+def edit_college_marks():
 
     if "user_id" not in session or session["role"] != "TEACHER":
         return redirect("/login")
+
+    subject_id = session.get("active_subject")
+
+    if not subject_id:
+        return redirect("/teacher_dashboard")
 
     active_session_id = session["active_session_id"]
 
     conn = get_db_connection()
 
     evaluation = conn.execute("""
-        SELECT id, data_json
+        SELECT id, locked, data_json
         FROM evaluations
         WHERE subject_id=? AND session_id=?
         ORDER BY id DESC
@@ -1418,30 +1342,27 @@ def edit_unlocked(subject_id):
 
     if not evaluation:
         conn.close()
-        return "Evaluation not found."
+        return redirect(f"/upload?subject_id={subject_id}")
 
-    records = conn.execute("""
-        SELECT roll_no
-        FROM evaluation_records
-        WHERE evaluation_id=? AND locked=0
-    """, (evaluation["id"],)).fetchall()
-
-    unlocked_rolls = [r["roll_no"] for r in records]
+    if evaluation["locked"] == 1:
+        conn.close()
+        return "Marks are locked."
 
     import json
-    data = json.loads(evaluation["data_json"])
+    data = json.loads(evaluation["data_json"]) if evaluation["data_json"] else []
 
-    # Filter only unlocked students
-    filtered_students = [
+    # 🔥 VERY IMPORTANT FIX
+    college_students = [
         s for s in data
-        if str(s.get("University Roll Number")) in unlocked_rolls
+        if s.get("Track") in ["College", "College Evaluated"]
+        or s.get("Result") == "College Exam Required"
     ]
 
     conn.close()
 
     return render_template(
         "edit_college.html",
-        data=filtered_students
+        data=college_students
     )
 
 @app.route("/hod_dashboard")
@@ -2305,14 +2226,34 @@ def delete_teacher(teacher_id):
     return redirect("/manage_teachers")
 
 #download options 
-@app.route("/download_college_excel")
-def download_college_excel():
+@app.route("/download_college_excel/<int:eval_id>")
+def download_college_excel(eval_id):
+    if "user_id" not in session:
+        return redirect("/login")
 
-    if not COLLEGE_LIST:
-        return "No college exam students available."
+    conn = get_db_connection()
+    evaluation = conn.execute("""
+        SELECT data_json FROM evaluations WHERE id=?
+    """, (eval_id,)).fetchone()
 
-    df = pd.DataFrame(COLLEGE_LIST)
+    if not evaluation:
+        conn.close()
+        return "Evaluation not found."
 
+    import json
+    data = json.loads(evaluation["data_json"])
+
+    college_students = [
+        s for s in data
+        if s.get("Track") in ["College", "College Evaluated"]
+    ]
+
+    conn.close()
+
+    if not college_students:
+        return "No college students found."
+
+    df = pd.DataFrame(college_students)
     buffer = io.BytesIO()
     df.to_excel(buffer, index=False)
     buffer.seek(0)
@@ -2323,20 +2264,39 @@ def download_college_excel():
         download_name="college_exam_students.xlsx"
     )
 
-@app.route("/download_college_pdf")
-def download_college_pdf():
+@app.route("/download_college_pdf/<int:eval_id>")
+def download_college_pdf(eval_id):
+    if "user_id" not in session:
+        return redirect("/login")
 
-    if not COLLEGE_LIST:
-        return "No college exam students available."
+    conn = get_db_connection()
+    evaluation = conn.execute("""
+        SELECT data_json FROM evaluations WHERE id=?
+    """, (eval_id,)).fetchone()
+
+    if not evaluation:
+        conn.close()
+        return "Evaluation not found."
+
+    import json
+    data = json.loads(evaluation["data_json"])
+
+    college_students = [
+        s for s in data
+        if s.get("Track") in ["College", "College Evaluated"]
+    ]
+
+    conn.close()
+
+    if not college_students:
+        return "No college students found."
 
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=pagesizes.A4)
-
     elements = []
 
     table_data = [["Roll No", "Name", "Status"]]
-
-    for s in COLLEGE_LIST:
+    for s in college_students:
         table_data.append([
             s.get("University Roll Number"),
             s.get("Student Name"),
@@ -2345,27 +2305,48 @@ def download_college_pdf():
 
     table = Table(table_data)
     table.setStyle([('GRID', (0,0), (-1,-1), 1, colors.black)])
-
     elements.append(table)
     doc.build(elements)
 
     buffer.seek(0)
+
     return send_file(
         buffer,
         as_attachment=True,
         download_name="college_exam_students.pdf"
     )
 
+@app.route("/download_attendance_sheet/<int:eval_id>")
+def download_attendance_sheet(eval_id):
 
-@app.route("/download_attendance_sheet")
-def download_attendance_sheet():
+    if "user_id" not in session:
+        return redirect("/login")
 
-    if not COLLEGE_LIST:
+    conn = get_db_connection()
+    evaluation = conn.execute("""
+        SELECT data_json
+        FROM evaluations
+        WHERE id=?
+    """, (eval_id,)).fetchone()
+
+    conn.close()
+
+    if not evaluation:
+        return "Evaluation not found."
+
+    import json
+    data = json.loads(evaluation["data_json"])
+
+    college_students = [
+        s for s in data
+        if s.get("Track") in ["College", "College Evaluated"]
+    ]
+
+    if not college_students:
         return "No students available."
 
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=pagesizes.A4)
-
     elements = []
 
     from reportlab.platypus import Paragraph, Spacer
@@ -2373,7 +2354,6 @@ def download_attendance_sheet():
 
     styles = getSampleStyleSheet()
 
-    # 🔥 Big Department Heading
     elements.append(Paragraph("<b>DEPARTMENT NAME</b>", styles["Title"]))
     elements.append(Spacer(1, 12))
 
@@ -2382,10 +2362,9 @@ def download_attendance_sheet():
     elements.append(Paragraph("Branch: ___", styles["Normal"]))
     elements.append(Spacer(1, 20))
 
-    # Table
     table_data = [["S.No", "University Roll No", "Student Name", "Signature"]]
 
-    for i, s in enumerate(COLLEGE_LIST, start=1):
+    for i, s in enumerate(college_students, start=1):
         table_data.append([
             i,
             s.get("University Roll Number"),
@@ -2400,14 +2379,126 @@ def download_attendance_sheet():
     doc.build(elements)
 
     buffer.seek(0)
+
     return send_file(
         buffer,
         as_attachment=True,
         download_name="attendance_sheet.pdf"
     )
 
+@app.route("/edit_unlocked/<int:subject_id>", methods=["GET", "POST"])
+def edit_unlocked(subject_id):
 
+    if "user_id" not in session or session["role"] != "TEACHER":
+        return redirect("/login")
 
+    active_session_id = session.get("active_session_id")
+    if not active_session_id:
+        return redirect("/teacher_dashboard")
+
+    conn = get_db_connection()
+
+    evaluation = conn.execute("""
+        SELECT id, data_json
+        FROM evaluations
+        WHERE subject_id=? AND session_id=?
+        ORDER BY id DESC
+        LIMIT 1
+    """, (subject_id, active_session_id)).fetchone()
+
+    if not evaluation:
+        conn.close()
+        return "Evaluation not found."
+
+    import json
+    data = json.loads(evaluation["data_json"]) if evaluation["data_json"] else []
+
+    # 🔓 Get unlocked students
+    records = conn.execute("""
+        SELECT roll_no
+        FROM evaluation_records
+        WHERE evaluation_id=? AND locked=0
+    """, (evaluation["id"],)).fetchall()
+
+    unlocked_rolls = [r["roll_no"] for r in records]
+
+    # ===============================
+    # 🔵 POST → SAVE CHANGES
+    # ===============================
+    if request.method == "POST":
+
+        for student in data:
+            roll = str(student.get("University Roll Number")).strip()
+
+            if roll not in unlocked_rolls:
+                continue
+
+            # Update College External if applicable
+            if student.get("Track") in ["College", "College Evaluated"]:
+
+                value = request.form.get(f"college_{roll}", "").strip()
+
+                try:
+                    marks = float(value)
+                except:
+                    marks = 0
+
+                if 0 <= marks <= 100:
+                    student["College_External_Raw"] = marks
+
+                    final_internal = custom_round(marks * 0.4)
+                    final_external = custom_round(marks * 0.6)
+
+                    student["Internal_Final"] = final_internal
+                    student["External_Final"] = final_external
+                    student["Total"] = final_internal + final_external
+
+                    student["Result"] = (
+                        "PASS" if final_internal >= 16 and final_external >= 24
+                        else "FAIL"
+                    )
+
+                    student["Track"] = "College Evaluated"
+
+        # 🔥 SAVE UPDATED DATA
+        conn.execute("""
+            UPDATE evaluations
+            SET data_json=?,
+                stage='college_done',
+                locked=1,
+                created_at=CURRENT_TIMESTAMP
+            WHERE id=?
+        """, (json.dumps(data), evaluation["id"]))
+
+        # 🔒 Re-lock all records
+        conn.execute("""
+            UPDATE evaluation_records
+            SET locked=1
+            WHERE evaluation_id=?
+        """, (evaluation["id"],))
+
+        conn.commit()
+        conn.close()
+
+        # ✅ Go back to final result
+        return redirect(f"/evaluate?subject_id={subject_id}")
+
+    # ===============================
+    # 🔵 GET → SHOW ONLY UNLOCKED
+    # ===============================
+    filtered_students = [
+        s for s in data
+        if str(s.get("University Roll Number")) in unlocked_rolls
+    ]
+
+    conn.close()
+
+    return render_template(
+        "edit_unlocked.html",
+        data=filtered_students,
+        subject_id=subject_id
+    )
+    
 from database import init_db
 
 init_db()

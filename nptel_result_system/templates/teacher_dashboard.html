@@ -7,6 +7,8 @@
 </head>
 <body>
 
+     <input type="hidden" name="subject_id" value="{{ session.get('active_subject') }}">
+
 <!-- ===== NAVBAR ===== -->
 <div class="navbar">
     <h3>NPTEL Result System</h3>
@@ -87,55 +89,44 @@
 
         <td>
 
-        {% if sub["stage"] == "college_done" %}
+{% if sub["stage"] == "college_done" %}
 
-            <!-- View result ALWAYS allowed -->
-            <a href="/upload?subject_id={{ sub['id'] }}">
-                <button class="success-btn">View Result</button>
-            </a>
-
-            {% if sub.unlocked_count > 0 %}
-<a href="/edit_unlocked/{{ sub['id'] }}">
-    <button class="primary-btn yellow-btn">
-        Unlocked Students ({{ sub.unlocked_count }})
-    </button>
-</a>
-{% endif %}
-
-
-            {% if sub["locked"] == 0 %}
-
-    <span>or</span>
-    <a href="/start_again/{{ sub['id'] }}">
-        <button class="primary-btn">Start Again</button>
+    <!-- ✅ View Result -->
+    <a href="{{ url_for('evaluate') }}?subject_id={{ sub['id'] }}">
+        <button class="success-btn">
+            View Result
+        </button>
     </a>
 
-{% elif sub["locked"] == 1 and sub.unlocked_count == 0 %}
+    <!-- ✅ Show Unlocked Button ONLY if some students unlocked -->
+    {% if sub["unlocked_count"] > 0 %}
+    <a href="{{ url_for('edit_unlocked', subject_id=sub['id']) }}">
+        <button class="primary-btn yellow-btn">
+            Unlocked Students ({{ sub["unlocked_count"] }})
+        </button>
+    </a>
+    {% endif %}
 
-    <!-- 🔒 FULLY LOCKED -->
-    <span class="lock-text">🔒 Locked</span>
+    <!-- 🔒 Fully locked indicator -->
+    {% if sub["locked"] == 1 and sub["unlocked_count"] == 0 %}
+        <span class="lock-text">🔒 Locked</span>
+    {% endif %}
+
+{% elif sub["stage"] == "college_pending" %}
+
+    <a href="{{ url_for('upload') }}?subject_id={{ sub['id'] }}">
+        <button class="primary-btn">Continue Evaluation</button>
+    </a>
+
+{% else %}
+
+    <a href="{{ url_for('upload') }}?subject_id={{ sub['id'] }}">
+        <button class="primary-btn">Start Evaluation</button>
+    </a>
 
 {% endif %}
 
-
-
-        {% elif sub["stage"] == "college_pending" %}
-
-            <a href="/upload?subject_id={{ sub['id'] }}">
-                <button class="primary-btn">Continue Evaluation</button>
-            </a>
-
-        {% else %}
-
-            <a href="/upload?subject_id={{ sub['id'] }}">
-                <button class="primary-btn">Start Evaluation</button>
-            </a>
-
-        {% endif %}
-
-
-        </td>
-
+</td>
     </tr>
     {% endfor %}
 {% endfor %}

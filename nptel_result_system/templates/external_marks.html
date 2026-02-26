@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>External Marks</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<script>
+function toggleMarks(select, roll) {
+    const input = document.getElementById("external_" + roll);
+    if (select.value === "Absent") {
+        input.value = 0;
+        input.readOnly = true;
+    } else {
+        input.readOnly = false;
+    }
+}
+</script>
+</head>
+<body>
+
+<div class="navbar">
+    <h3>NPTEL Result System</h3>
+    <div class="nav-actions">
+        <a href="/teacher_dashboard">
+            <button class="secondary-btn">Dashboard</button>
+        </a>
+        <a href="/logout">
+            <button class="primary-btn">Logout</button>
+        </a>
+    </div>
+</div>
+
+<div class="container">
+
+<h2 class="page-title">Enter External Marks (Out of 75)</h2>
+
+<form action="/save_external_marks" method="POST">
+    <input type="hidden" name="subject_id" value="{{ session.get('active_subject') }}">
+
+<table class="styled-table">
+
+<tr>
+<th>S.No</th>
+<th>Roll</th>
+<th>Name</th>
+<th>Registered</th>
+<th>Present / Absent</th>
+<th>External (75)</th>
+</tr>
+
+{% for row in data %}
+<tr>
+
+<td>{{ row.get("SNo","") }}</td>
+
+<td>{{ row.get("University Roll Number","") }}</td>
+
+<td>{{ row.get("Student Name","") }}</td>
+
+<td>{{ row.get("Registered","") }}</td>
+
+<td>
+{% if row.get("Registered") == "Not Registered" %}
+    Not Applicable
+{% else %}
+    <select name="status_{{ row.get('University Roll Number') }}"
+            onchange="toggleMarks(this, '{{ row.get('University Roll Number') }}')">
+        <option value="Present">Present</option>
+        <option value="Absent">Absent</option>
+    </select>
+{% endif %}
+</td>
+
+<td>
+{% if row.get("Registered") == "Not Registered" %}
+    <input type="number" value="0" readonly>
+{% else %}
+    <input type="number"
+           id="external_{{ row.get('University Roll Number') }}"
+           name="external_{{ row.get('University Roll Number') }}"
+           min="0"
+           max="75"
+           required>
+{% endif %}
+</td>
+
+</tr>
+{% endfor %}
+
+</table>
+
+<br>
+<button type="submit" class="primary-btn">Save & Evaluate</button>
+
+</form>
+
+</div>
+</body>
+</html>
