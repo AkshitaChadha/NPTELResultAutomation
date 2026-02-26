@@ -547,7 +547,6 @@ def get_available_sections():
     return jsonify(available_sections)
 
 
-
 @app.route("/evaluate")
 def evaluate():
     if "user_id" not in session:
@@ -607,19 +606,20 @@ def evaluate():
 
             result = evaluate_student(student)
 
+            # 🔥 CRITICAL FIX — store computed values
+            student.update(result)
+
         except:
             student["Track"] = "College"
             student["Result"] = "Invalid Marks"
             college_list.append(student)
             continue
 
-        if result.get("Result") == "FAIL":
-            student["Track"] = "College"
-            student["Result"] = "College Exam Required"
+        # Use updated student object
+        if student.get("Track") == "College":
             college_list.append(student)
         else:
-            result["Track"] = "NPTEL"
-            nptel_list.append(result)
+            nptel_list.append(student)
 
     # ✅ FINAL MERGE LOGIC
     stage_value = "college_done" if len(college_list) == 0 else "college_pending"
@@ -661,8 +661,9 @@ def evaluate():
         unlocked_count=unlocked_count,
         can_download=can_download,
         evaluation_id=evaluation["id"]
+        
+        
     )
-
 @app.route("/save_external_marks", methods=["POST"])
 def save_external_marks():
 
