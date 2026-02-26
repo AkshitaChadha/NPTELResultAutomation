@@ -1,38 +1,65 @@
 # evaluator.py
-import math
-def custom_round(value):
 
-    # Handle NaN safely
+import math
+
+
+def custom_round(value):
+    """
+    Rounding rule:
+    < 0.5 → floor
+    >= 0.5 → ceil
+    """
+
     if value is None or (isinstance(value, float) and math.isnan(value)):
         return 0
 
     decimal = value - int(value)
 
-    if decimal <= 0.4:
+    if decimal < 0.5:
         return int(value)
     else:
         return int(value) + 1
 
 
-
 def evaluate_student(student):
+    """
+    NPTEL STAGE LOGIC
 
-    external_value = str(student["NPTEL External Marks"]).strip().upper()
+    1. Convert 25 → 40
+    2. Convert 75 → 60
+    3. Check eligibility on converted values
+    4. If PASS → combine & re-divide
+    5. If FAIL → send to College
+    """
 
+    external_value = str(student.get("NPTEL External Marks", "")).strip().upper()
+
+    # 🔴 NPTEL EXTERNAL ABSENT
     if external_value == "ABSENT":
+
+        assignment = float(student.get("Assignment Marks", 0))
+        internal_40 = custom_round((assignment / 25) * 40)
+
+        student["Internal_Converted"] = internal_40
+        student["External_Converted"] = 0
+
+        student["Internal_Final"] = internal_40
+        student["External_Final"] = "ABSENT"
+        student["Total"] = internal_40
+
         student["Track"] = "College"
         student["Result"] = "External Absent"
+
         return student
 
     try:
-        assignment = float(student["Assignment Marks"])
-        external = float(student["NPTEL External Marks"])
+        assignment = float(student.get("Assignment Marks", 0))
+        external = float(student.get("NPTEL External Marks", 0))
     except:
         student["Track"] = "College"
         student["Result"] = "Invalid Marks"
         return student
 
-    # Validate limits
     if assignment < 0 or assignment > 25:
         student["Track"] = "College"
         student["Result"] = "Invalid Assignment Marks"
@@ -43,39 +70,29 @@ def evaluate_student(student):
         student["Result"] = "Invalid External Marks"
         return student
 
-    # ===============================
-    # 🔹 STEP 1 – Convert to 40–60
-    # ===============================
+    # 🔹 Convert
     internal_40 = custom_round((assignment / 25) * 40)
     external_60 = custom_round((external / 75) * 60)
 
-    combined_total = internal_40 + external_60  # out of 100
+    student["Internal_Converted"] = internal_40
+    student["External_Converted"] = external_60
 
-    # ===============================
-    # 🔹 STEP 2 – Re-divide 100 into 40–60
-    # ===============================
+    # 🔹 Eligibility Check
+    if internal_40 < 16 or external_60 < 24:
+        student["Result"] = "FAIL"
+        student["Track"] = "College"
+        return student
+
+    # 🔹 If PASS → Combine & Re-divide
+    combined_total = internal_40 + external_60
+
     final_internal = custom_round(combined_total * 0.4)
     final_external = custom_round(combined_total * 0.6)
 
-    total = final_internal + final_external
-
-    internal_status = ""
-    external_status = ""
-
-    if final_internal < 16:
-        internal_status = " (FAIL)"
-
-    if final_external < 24:
-        external_status = " (FAIL)"
-
-    student["Internal_Final"] = f"{final_internal}{internal_status}"
-    student["External_Final"] = f"{final_external}{external_status}"
-    student["Total"] = total
-
-    if final_internal >= 16 and final_external >= 24:
-        student["Result"] = "PASS"
-    else:
-        student["Result"] = "FAIL"
-        student["Track"] = "NPTEL"
+    student["Internal_Final"] = final_internal
+    student["External_Final"] = final_external
+    student["Total"] = final_internal + final_external
+    student["Result"] = "PASS"
+    student["Track"] = "NPTEL"
 
     return student

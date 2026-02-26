@@ -711,7 +711,7 @@ def save_external_marks():
             continue
 
         if status == "Absent":
-            student["NPTEL External Marks"] = 0
+            student["NPTEL External Marks"] = "ABSENT"
             student["Attendance"] = "Absent"
             continue
 
@@ -904,29 +904,41 @@ def save_college_marks():
 
         roll = str(student["University Roll Number"]).strip()
         status = request.form.get(f"status_{roll}", "Present").strip()
-        external_input = request.form.get(f"external_{roll}", "").strip()
+        value = request.form.get(f"external_{roll}", "").strip()
 
+        internal_40 = student.get("Internal_Converted", 0)
+
+        # 🔴 COLLEGE ABSENT
         if status.upper() == "ABSENT":
+
+            combined_total = internal_40 + 0
+
+            final_internal = custom_round(combined_total * 0.4)
+            final_external = custom_round(combined_total * 0.6)
+
             student["College_External_Raw"] = "ABSENT"
-            student["Internal_Final"] = 0
-            student["External_Final"] = 0
-            student["Total"] = 0
+            student["Internal_Final"] = final_internal
+            student["External_Final"] = "ABSENT"
+            student["Total"] = final_internal + final_external
             student["Result"] = "FAIL"
             student["Track"] = "College Evaluated"
+
             continue
 
         try:
-            numeric_external = float(external_input)
+            college_external = float(value)
         except:
             continue
 
-        if numeric_external < 0 or numeric_external > 100:
+        if not (0 <= college_external <= 60):
             continue
 
-        student["College_External_Raw"] = numeric_external
+        student["College_External_Raw"] = college_external
 
-        final_internal = custom_round(numeric_external * 0.4)
-        final_external = custom_round(numeric_external * 0.6)
+        combined_total = internal_40 + college_external
+
+        final_internal = custom_round(combined_total * 0.4)
+        final_external = custom_round(combined_total * 0.6)
 
         student["Internal_Final"] = final_internal
         student["External_Final"] = final_external
@@ -2587,7 +2599,6 @@ def edit_unlocked(subject_id):
     import json
     data = json.loads(evaluation["data_json"]) if evaluation["data_json"] else []
 
-    # 🔓 Get unlocked students
     records = conn.execute("""
         SELECT roll_no
         FROM evaluation_records
@@ -2596,9 +2607,9 @@ def edit_unlocked(subject_id):
 
     unlocked_rolls = [r["roll_no"] for r in records]
 
-    # ===============================
-    # 🔵 POST → SAVE CHANGES
-    # ===============================
+    # -----------------------
+    # POST SECTION
+    # -----------------------
     if request.method == "POST":
 
         for student in data:
@@ -2607,34 +2618,55 @@ def edit_unlocked(subject_id):
             if roll not in unlocked_rolls:
                 continue
 
-            # Update College External if applicable
             if student.get("Track") in ["College", "College Evaluated"]:
 
                 value = request.form.get(f"college_{roll}", "").strip()
+                internal_40 = student.get("Internal_Converted", 0)
 
-                try:
-                    marks = float(value)
-                except:
-                    marks = 0
+                # ABSENT
+                if value.upper() == "ABSENT":
 
-                if 0 <= marks <= 100:
-                    student["College_External_Raw"] = marks
+                    combined_total = internal_40 + 0
 
-                    final_internal = custom_round(marks * 0.4)
-                    final_external = custom_round(marks * 0.6)
+                    final_internal = custom_round(combined_total * 0.4)
+                    final_external = custom_round(combined_total * 0.6)
 
+                    student["College_External_Raw"] = "ABSENT"
                     student["Internal_Final"] = final_internal
-                    student["External_Final"] = final_external
+                    student["External_Final"] = "ABSENT"
                     student["Total"] = final_internal + final_external
-
-                    student["Result"] = (
-                        "PASS" if final_internal >= 16 and final_external >= 24
-                        else "FAIL"
-                    )
-
+                    student["Result"] = "FAIL"
                     student["Track"] = "College Evaluated"
 
-        # 🔥 SAVE UPDATED DATA
+                    continue
+
+                try:
+                    college_external = float(value)
+                except:
+                    continue
+
+                if not (0 <= college_external <= 60):
+                    continue
+
+                student["College_External_Raw"] = college_external
+
+                combined_total = internal_40 + college_external
+
+                final_internal = custom_round(combined_total * 0.4)
+                final_external = custom_round(combined_total * 0.6)
+
+                student["Internal_Final"] = final_internal
+                student["External_Final"] = final_external
+                student["Total"] = final_internal + final_external
+
+                student["Result"] = (
+                    "PASS"
+                    if final_internal >= 16 and final_external >= 24
+                    else "FAIL"
+                )
+
+                student["Track"] = "College Evaluated"
+
         conn.execute("""
             UPDATE evaluations
             SET data_json=?,
@@ -2644,7 +2676,6 @@ def edit_unlocked(subject_id):
             WHERE id=?
         """, (json.dumps(data), evaluation["id"]))
 
-        # 🔒 Re-lock all records
         conn.execute("""
             UPDATE evaluation_records
             SET locked=1
@@ -2654,12 +2685,11 @@ def edit_unlocked(subject_id):
         conn.commit()
         conn.close()
 
-        # ✅ Go back to final result
         return redirect(f"/evaluate?subject_id={subject_id}")
 
-    # ===============================
-    # 🔵 GET → SHOW ONLY UNLOCKED
-    # ===============================
+    # -----------------------
+    # GET SECTION
+    # -----------------------
     filtered_students = [
         s for s in data
         if str(s.get("University Roll Number")) in unlocked_rolls

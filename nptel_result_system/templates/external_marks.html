@@ -3,17 +3,41 @@
 <head>
 <title>External Marks</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+
 <script>
+
 function toggleMarks(select, roll) {
     const input = document.getElementById("external_" + roll);
+
     if (select.value === "Absent") {
-        input.value = 0;
+        input.value = "";
         input.readOnly = true;
+        input.removeAttribute("required");
     } else {
         input.readOnly = false;
+        input.setAttribute("required", "required");
     }
 }
+
+/* 🔥 ENTER → MOVE TO NEXT INPUT */
+function moveNext(event, roll) {
+    if (event.key === "Enter") {
+        event.preventDefault();
+
+        const inputs = Array.from(document.querySelectorAll("input[type='number']"))
+            .filter(input => !input.readOnly);
+
+        const current = document.getElementById("external_" + roll);
+        const index = inputs.indexOf(current);
+
+        if (index > -1 && index < inputs.length - 1) {
+            inputs[index + 1].focus();
+        }
+    }
+}
+
 </script>
+
 </head>
 <body>
 
@@ -51,11 +75,8 @@ function toggleMarks(select, roll) {
 <tr>
 
 <td>{{ row.get("SNo","") }}</td>
-
 <td>{{ row.get("University Roll Number","") }}</td>
-
 <td>{{ row.get("Student Name","") }}</td>
-
 <td>{{ row.get("Registered","") }}</td>
 
 <td>
@@ -79,7 +100,7 @@ function toggleMarks(select, roll) {
            name="external_{{ row.get('University Roll Number') }}"
            min="0"
            max="75"
-           required>
+           onkeydown="moveNext(event, '{{ row.get('University Roll Number') }}')">
 {% endif %}
 </td>
 
