@@ -915,14 +915,18 @@ def download_college_list(eval_id):
         download_name="college_exam_students.xlsx"
     )
 
-@app.route("/login", methods=["GET","POST"])
+@app.route("/login", methods=["GET", "POST"])
 def login():
+
+    error = None
+    email = ""
+    selected_role = "TEACHER"
 
     if request.method == "POST":
 
-        email = request.form["email"]
+        email = request.form["email"].strip().lower()
         password = request.form["password"]
-        role = request.form.get("role")
+        selected_role = request.form.get("role")
 
         conn = get_db_connection()
 
@@ -939,49 +943,58 @@ def login():
         conn.close()
 
         # =========================
-        # TEACHER LOGIN
+        # 🔴 TEACHER LOGIN
         # =========================
-        if role == "TEACHER":
+        if selected_role == "TEACHER":
 
             if teacher and check_password_hash(teacher["password"], password):
 
-                session["user_id"] = teacher["id"]
-                session["role"] = "TEACHER"
-                session["is_super_admin"] = False   # 🔥 IMPORTANT
-                session.permanent = True
+                # 🔴 Check Deactivated
+                if teacher and teacher["is_deactivated"] == 1:
+                    error = "Your account is deactivated. Contact HOD."
+                else:
+                    session["user_id"] = teacher["id"]
+                    session["role"] = "TEACHER"
+                    session["is_super_admin"] = False
+                    session.permanent = True
 
-                if teacher["is_active"] == 0:
-                    return redirect("/change_password")
+                    # 🔥 FIRST LOGIN PASSWORD CHANGE
+                    if teacher["is_active"] == 0:
+                        return redirect("/change_password")
 
-                return redirect("/teacher_dashboard")
+                    return redirect("/teacher_dashboard")
 
-            return "Invalid teacher credentials"
+            else:
+                error = "Invalid email or password"
 
         # =========================
-        # ADMIN LOGIN
+        # 🔵 ADMIN LOGIN
         # =========================
-        if role == "ADMIN":
+        elif selected_role == "ADMIN":
 
-            # 🔵 Teacher promoted to admin
+            # 🟡 Teacher promoted to Admin
             if teacher and teacher["is_admin"] == 1 \
                and check_password_hash(teacher["password"], password):
 
-                session["user_id"] = teacher["id"]
-                session["role"] = "HOD"
-                session["is_super_admin"] = False   # 🔥 NOT super admin
-                session.permanent = True
+                if teacher.get("is_deactivated") == 1:
+                    error = "Your account is deactivated. Contact HOD."
+                else:
+                    session["user_id"] = teacher["id"]
+                    session["role"] = "HOD"
+                    session["is_super_admin"] = False
+                    session.permanent = True
 
-                if teacher["is_active"] == 0:
-                    return redirect("/change_password")
+                    if teacher["is_active"] == 0:
+                        return redirect("/change_password")
 
-                return redirect("/hod_dashboard")
+                    return redirect("/hod_dashboard")
 
             # 🔴 Real HOD (Super Admin)
-            if hod and check_password_hash(hod["password"], password):
+            elif hod and check_password_hash(hod["password"], password):
 
                 session["user_id"] = hod["id"]
                 session["role"] = "HOD"
-                session["is_super_admin"] = True   # 🔥 SUPER ADMIN
+                session["is_super_admin"] = True
                 session.permanent = True
 
                 if hod["is_active"] == 0:
@@ -989,11 +1002,15 @@ def login():
 
                 return redirect("/hod_dashboard")
 
-            return "Invalid admin credentials"
+            else:
+                error = "Invalid email or password"
 
-    return render_template("login.html")
-
-
+    return render_template(
+        "login.html",
+        error=error,
+        email=email,
+        selected_role=selected_role
+    )
 
 @app.route("/check_roles")
 def check_roles():
@@ -1398,10 +1415,12 @@ def hod_dashboard():
     # ----------------------------
     # Teachers
     # ----------------------------
-    teachers_raw = conn.execute(
-        "SELECT * FROM teachers WHERE hod_id=?",
-        (session["user_id"],)
-    ).fetchall()
+    teachers_raw = conn.execute("""
+    SELECT *
+    FROM teachers
+    WHERE hod_id=?
+    AND is_deactivated=0
+""", (session["user_id"],)).fetchall()
 
     teachers = []
 
@@ -1647,13 +1666,14 @@ def assign_subject(teacher_id):
 
     # 🔹 Get teacher
     teacher = conn.execute(
-        "SELECT * FROM teachers WHERE id=?",
-        (teacher_id,)
-    ).fetchone()
+    "SELECT * FROM teachers WHERE id=? AND is_deactivated=0",
+    (teacher_id,)
+).fetchone()
 
     if not teacher:
         conn.close()
-        return "Teacher not found."
+        flash("Cannot assign subject. Teacher is deactivated.", "danger")
+        return redirect("/hod_dashboard")
 
 
     # 🔹 Load Branches
@@ -1784,14 +1804,26 @@ def teacher_dashboard():
         (session["user_id"],)
     ).fetchone()
 
+    teacher_status = conn.execute("""
+    SELECT is_deactivated
+    FROM teachers
+    WHERE id=?
+""", (session["user_id"],)).fetchone()
+
+    if teacher_status and teacher_status["is_deactivated"] == 1:
+        conn.close()
+        session.clear()
+        flash("Your account is deactivated. Contact HOD.", "danger")
+        return redirect("/login")
+
     subjects = conn.execute("""
-        SELECT *
-        FROM subjects
-        WHERE teacher_id=? AND session_id=?
-    """, (
-        session["user_id"],
-        active_session_id
-    )).fetchall()
+    SELECT *
+    FROM subjects
+    WHERE teacher_id=? AND session_id=?
+""", (
+    session["user_id"],
+    active_session_id
+)).fetchall()
 
     evaluations = conn.execute("""
     SELECT id, subject_id, stage, locked
@@ -1986,6 +2018,9 @@ def delete_subject(subject_id):
     return redirect("/manage_subjects")
 
 
+from flask import flash
+import sqlite3
+
 @app.route("/manage_branches", methods=["GET", "POST"])
 def manage_branches():
 
@@ -1994,29 +2029,46 @@ def manage_branches():
 
     conn = get_db_connection()
 
-    # Add Branch
     if request.method == "POST":
+
         branch_name = request.form.get("branch_name")
 
         if branch_name:
-                conn.execute(
-                    "INSERT INTO branches (name, hod_id) VALUES (?, ?)",
-                    (branch_name.strip().upper(), session["user_id"])
-                )
+
+            branch_name = branch_name.strip().upper()
+
+            # 🔍 Check if branch already exists for this HOD
+            existing = conn.execute("""
+                SELECT id FROM branches
+                WHERE name=? AND hod_id=?
+            """, (branch_name, session["user_id"])).fetchone()
+
+            if existing:
+                flash("Branch already exists!", "danger")
+            else:
+                conn.execute("""
+                    INSERT INTO branches (name, hod_id)
+                    VALUES (?, ?)
+                """, (branch_name, session["user_id"]))
                 conn.commit()
+                flash("Branch added successfully!", "success")
 
-
+        conn.close()
         return redirect("/manage_branches")
 
-    branches = conn.execute(
-        "SELECT * FROM branches WHERE hod_id=? ORDER BY name",
-        (session["user_id"],)
-    ).fetchall()
+    # 🔵 GET
+    branches = conn.execute("""
+        SELECT * FROM branches
+        WHERE hod_id=?
+        ORDER BY name
+    """, (session["user_id"],)).fetchall()
 
     conn.close()
 
-    return render_template("manage_branches.html", branches=branches)
-
+    return render_template(
+        "manage_branches.html",
+        branches=branches
+    )
 
 @app.route("/delete_branch/<int:branch_id>")
 def delete_branch(branch_id):
@@ -2192,11 +2244,13 @@ def manage_teachers():
     conn = get_db_connection()
 
     teachers = conn.execute("""
-        SELECT DISTINCT t.*
-        FROM teachers t
-        WHERE t.hod_id=?
-        ORDER BY t.name
-    """, (session["user_id"],)).fetchall()
+    SELECT DISTINCT t.*
+    FROM teachers t
+    WHERE t.hod_id=?
+    ORDER BY 
+        t.is_deactivated ASC,   -- Active (0) first, Deactivated (1) last
+        t.name ASC
+""", (session["user_id"],)).fetchall()
 
     conn.close()
 
@@ -2206,6 +2260,42 @@ def manage_teachers():
         is_super_admin=session.get("is_super_admin", False)
     )
 
+
+@app.route("/toggle_deactivate/<int:teacher_id>", methods=["POST"])
+def toggle_deactivate(teacher_id):
+
+    if not hod_required():
+        return redirect("/login")
+
+    conn = get_db_connection()
+
+    teacher = conn.execute("""
+        SELECT is_deactivated
+        FROM teachers
+        WHERE id=? AND hod_id=?
+    """, (teacher_id, session["user_id"])).fetchone()
+
+    if not teacher:
+        conn.close()
+        return redirect("/manage_teachers")
+
+    new_value = 0 if teacher["is_deactivated"] == 1 else 1
+
+    conn.execute("""
+        UPDATE teachers
+        SET is_deactivated=?
+        WHERE id=?
+    """, (new_value, teacher_id))
+
+    conn.commit()
+    conn.close()
+
+    if new_value == 1:
+        flash("Teacher deactivated successfully.", "danger")
+    else:
+        flash("Teacher activated successfully.", "success")
+
+    return redirect("/manage_teachers")
 
 @app.route("/delete_teacher/<int:teacher_id>")
 def delete_teacher(teacher_id):

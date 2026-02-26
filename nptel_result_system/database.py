@@ -42,7 +42,8 @@ def init_db():
     password TEXT NOT NULL,
     hod_id INTEGER NOT NULL,
     is_active INTEGER DEFAULT 0,
-    is_admin INTEGER DEFAULT 0   -- NEW
+    is_admin INTEGER DEFAULT 0,
+    is_deactivated INTEGER DEFAULT 0
 )
     """)
 

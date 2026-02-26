@@ -99,6 +99,7 @@
 <tr>
     <th>Name</th>
     <th>Email</th>
+    <th>Status</th>
     <th>Role</th>
     {% if is_super_admin %}
         <th>Admin Control</th>
@@ -112,16 +113,25 @@
 <td>{{ t["name"] }}</td>
 <td>{{ t["email"] }}</td>
 
-<!-- ROLE COLUMN -->
+<!-- STATUS -->
 <td>
-    {% if t["is_admin"] == 1 %}
-        <span style="color:#27ae60; font-weight:bold;">
-            Admin
+    {% if t["is_deactivated"] == 1 %}
+        <span style="color:#c0392b; font-weight:bold;">
+            Deactivated
         </span>
     {% else %}
-        <span style="color:#7f8c8d;">
-            Teacher
+        <span style="color:#27ae60; font-weight:bold;">
+            Active
         </span>
+    {% endif %}
+</td>
+
+<!-- ROLE -->
+<td>
+    {% if t["is_admin"] == 1 %}
+        <span style="color:#27ae60; font-weight:bold;">Admin</span>
+    {% else %}
+        <span style="color:#7f8c8d;">Teacher</span>
     {% endif %}
 </td>
 
@@ -137,18 +147,29 @@
 </td>
 {% endif %}
 
-<!-- DELETE -->
+<!-- ACTIONS -->
 <td>
+
+    <!-- Deactivate / Activate -->
+    <form method="POST" action="/toggle_deactivate/{{ t['id'] }}" style="display:inline;">
+        {% if t["is_deactivated"] == 1 %}
+            <button class="primary-btn">Activate</button>
+        {% else %}
+            <button class="secondary-btn">Deactivate</button>
+        {% endif %}
+    </form>
+
+    <!-- Delete -->
     <a href="/delete_teacher/{{ t['id'] }}"
        onclick="return confirm('Are you sure you want to delete this teacher?');">
         <button type="button" class="secondary-btn">Delete</button>
     </a>
+
 </td>
 
 </tr>
 {% endfor %}
 </table>
-
 {% else %}
 <p>No teachers added yet.</p>
 {% endif %}

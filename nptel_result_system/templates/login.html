@@ -3,6 +3,23 @@
 <head>
 <title>Login</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+
+<style>
+.alert {
+    padding: 12px;
+    margin-bottom: 20px;
+    border-radius: 6px;
+    font-weight: 500;
+    text-align: center;
+}
+
+.alert-danger {
+    background-color: #fdecea;
+    color: #c0392b;
+    border: 1px solid #c0392b;
+}
+</style>
+
 </head>
 <body>
 
@@ -14,16 +31,26 @@
 
     <h2 class="page-title" style="text-align:center;">Login</h2>
 
+    <!-- 🔴 ERROR MESSAGE -->
+    {% if error %}
+        <div class="alert alert-danger">
+            {{ error }}
+        </div>
+    {% endif %}
+
     <form method="POST" style="margin-top:30px;">
 
+        <!-- EMAIL -->
         <input name="email"
                id="email"
                placeholder="Enter Email"
                required
+               value="{{ email }}"
                class="big-input">
 
         <br>
 
+        <!-- PASSWORD -->
         <input name="password"
                type="password"
                placeholder="Enter Password"
@@ -32,12 +59,11 @@
 
         <br>
 
-        <!-- Role Dropdown -->
+        <!-- ROLE DROPDOWN -->
         <select name="role"
-        id="roleSelect"
-        class="big-input">
-    <option value="TEACHER">Teacher</option>
-</select>
+                id="roleSelect"
+                class="big-input">
+        </select>
 
         <br>
 
@@ -50,16 +76,19 @@
 </div>
 
 <script>
-document.getElementById("email").addEventListener("blur", function() {
 
-    fetch("/check_roles?email=" + this.value)
+function loadRoles(email, selectedRole=null) {
+
+    if (!email) return;
+
+    fetch("/check_roles?email=" + email)
     .then(response => response.json())
     .then(data => {
 
         let select = document.getElementById("roleSelect");
         select.innerHTML = "";
 
-        // 🔴 If real HOD
+        // 🔴 Real HOD (Super Admin)
         if (data.roles.includes("HOD")) {
 
             let superOption = document.createElement("option");
@@ -71,26 +100,47 @@ document.getElementById("email").addEventListener("blur", function() {
             return;
         }
 
-        // 🟢 Always add Teacher
-        let teacherOption = document.createElement("option");
-        teacherOption.value = "TEACHER";
-        teacherOption.text = "Teacher";
-        select.appendChild(teacherOption);
+        // 🟢 Teacher option
+        if (data.roles.includes("TEACHER")) {
+            let teacherOption = document.createElement("option");
+            teacherOption.value = "TEACHER";
+            teacherOption.text = "Teacher";
+            select.appendChild(teacherOption);
+        }
 
-        // 🟡 If teacher is also admin
+        // 🟡 Admin option (promoted teacher)
         if (data.roles.includes("ADMIN")) {
-
             let adminOption = document.createElement("option");
             adminOption.value = "ADMIN";
             adminOption.text = "Admin";
             select.appendChild(adminOption);
         }
 
+        // 🔥 Restore previously selected role
+        if (selectedRole) {
+            select.value = selectedRole;
+        }
+
     });
+}
 
+// 🔵 On email blur → load roles
+document.getElementById("email").addEventListener("blur", function() {
+    loadRoles(this.value);
 });
-</script>
 
+// 🔥 AUTO LOAD ROLES ON PAGE LOAD (after invalid login)
+window.onload = function() {
+
+    let existingEmail = "{{ email }}";
+    let previousRole = "{{ selected_role }}";
+
+    if (existingEmail) {
+        loadRoles(existingEmail, previousRole);
+    }
+};
+
+</script>
 
 </body>
 </html>
