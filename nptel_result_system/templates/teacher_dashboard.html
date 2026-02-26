@@ -91,35 +91,21 @@
 
 {% if sub["stage"] == "college_done" %}
 
-    <!-- ✅ View Result -->
+    <!-- View Result -->
     <a href="{{ url_for('evaluate') }}?subject_id={{ sub['id'] }}">
-        <button class="success-btn">
-            View Result
-        </button>
+        <button class="success-btn">View Result</button>
     </a>
 
-    <!-- ✅ Show Unlocked Button ONLY if some students unlocked -->
-    {% if sub["unlocked_count"] > 0 %}
-    <a href="{{ url_for('edit_unlocked', subject_id=sub['id']) }}">
-        <button class="primary-btn yellow-btn">
-            Unlocked Students ({{ sub["unlocked_count"] }})
-        </button>
-    </a>
-    {% endif %}
+{% elif sub["stage"] in ["registration_done", "assignment_done", "external_saved", "college_pending"] %}
 
-    <!-- 🔒 Fully locked indicator -->
-    {% if sub["locked"] == 1 and sub["unlocked_count"] == 0 %}
-        <span class="lock-text">🔒 Locked</span>
-    {% endif %}
-
-{% elif sub["stage"] == "college_pending" %}
-
+    <!-- Continue Evaluation -->
     <a href="{{ url_for('upload') }}?subject_id={{ sub['id'] }}">
         <button class="primary-btn">Continue Evaluation</button>
     </a>
 
 {% else %}
 
+    <!-- Start Evaluation -->
     <a href="{{ url_for('upload') }}?subject_id={{ sub['id'] }}">
         <button class="primary-btn">Start Evaluation</button>
     </a>

@@ -4,7 +4,6 @@
 <title>NPTEL Result System</title>
 
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-
 </head>
 
 <body>
@@ -34,31 +33,36 @@
 
 <div class="page-card">
 
-<h2>Upload Student Excel Sheet</h2>
+    {% if subject %}
+    <div class="subject-box">
 
-{% if subject %}
-<div class="subject-box">
-<h3>{{ subject["subject_name"] }} ({{ subject["subject_code"] }})</h3>
-<p>
-Semester : {{ subject["semester"] }} |
-Section : {{ subject["section"] }} |
-Branch : {{ subject["branch"] }}
-</p>
+        <h3>Class Details</h3>
+
+        <p><strong>Branch:</strong> {{ subject["branch"] }}</p>
+
+        <p><strong>Class:</strong> Semester {{ subject["semester"] }} - Section {{ subject["section"] }}</p>
+
+        <p><strong>Subject:</strong> {{ subject["subject_name"] }}</p>
+
+        <p><strong>Subject Code:</strong> {{ subject["subject_code"] }}</p>
+
+    </div>
+    <br>
+    {% endif %}
+
+    <h2>Upload Student Excel Sheet</h2>
+
+    <form action="/upload" method="POST" enctype="multipart/form-data" class="form-box">
+
+        <div class="form-group">
+            <input type="file" name="file" class="primary-button" required>
+        </div>
+
+        <button class="primary-btn">Upload & Preview</button>
+
+    </form>
+
 </div>
-{% endif %}
-
-<form action="/upload" method="POST" enctype="multipart/form-data" class="form-box">
-
-<div class="form-group">
-<input type="file" name="file" class="primary-button" required>
-</div>
-
-<button class="primary-btn">Upload & Preview</button>
-
-</form>
-
-</div>
-
 
 </body>
 </html>

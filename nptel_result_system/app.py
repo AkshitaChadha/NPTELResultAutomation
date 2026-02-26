@@ -39,8 +39,8 @@ def upload():
 
     if "user_id" not in session:
         return redirect("/login")
-    
-    subject_id = request.args.get("subject_id")
+
+    subject_id = request.args.get("subject_id", type=int)
 
     if subject_id:
         session["active_subject"] = subject_id
@@ -48,19 +48,62 @@ def upload():
     if "active_subject" not in session:
         return "ERROR: active_subject missing in session"
 
-    # Ensure session exists
     if "active_session_id" not in session:
         session["session_label"] = get_current_session()
         session["active_session_id"] = get_or_create_session(
             session["session_label"]
         )
 
-    if request.method == "GET":
-        return render_template("upload.html")
+    active_session_id = session["active_session_id"]
 
     # ===============================
-    # 🔵 POST → Upload Student List
+    # GET
     # ===============================
+    if request.method == "GET":
+
+        conn = get_db_connection()
+
+        subject = conn.execute("""
+            SELECT *
+            FROM subjects
+            WHERE id=? AND session_id=?
+        """, (session["active_subject"], active_session_id)).fetchone()
+
+        # 🔍 Check if evaluation already exists
+        evaluation = conn.execute("""
+            SELECT stage
+            FROM evaluations
+            WHERE subject_id=? AND session_id=? AND teacher_id=?
+            ORDER BY id DESC
+            LIMIT 1
+        """, (
+            session["active_subject"],
+            active_session_id,
+            session["user_id"]
+        )).fetchone()
+
+        conn.close()
+
+        # 🔥 If evaluation exists → Redirect based on stage
+        if evaluation:
+
+            stage = evaluation["stage"]
+
+            if stage == "registration_done":
+                return redirect(url_for("save_assignment", subject_id=session["active_subject"]))
+
+            elif stage == "assignment_done":
+                return redirect(url_for("external_marks", subject_id=session["active_subject"]))
+
+            elif stage in ["external_saved", "college_pending", "college_done"]:
+                return redirect(url_for("evaluate", subject_id=session["active_subject"]))
+
+        # 🔹 Otherwise show upload page
+        return render_template("upload.html", subject=subject)
+    # ===============================
+    # POST
+    # ===============================
+
     file = request.files.get("file")
 
     if not file:
@@ -77,7 +120,6 @@ def upload():
 
     df.columns = df.columns.str.strip().str.lower()
 
-    # ✅ Validate format
     required_cols = ["sno", "university roll number", "student name"]
 
     if list(df.columns) != required_cols:
@@ -90,11 +132,10 @@ def upload():
             "SNo": row["sno"],
             "University Roll Number": str(row["university roll number"]).strip(),
             "Student Name": row["student name"],
-            "Registered": "Registered"   # default
+            "Registered": "Registered"
         })
 
-    return render_template("registration_preview.html", data=ORIGINAL_DATA)
-
+    return render_template("registration_preview.html", data=ORIGINAL_DATA)    
 
 @app.route("/save_registration", methods=["POST"])
 def save_registration():
@@ -102,7 +143,7 @@ def save_registration():
     if "user_id" not in session:
         return redirect("/login")
 
-    subject_id = session.get("active_subject")
+    subject_id = int(session.get("active_subject"))
     active_session_id = session.get("active_session_id")
 
     if not subject_id or not active_session_id:
@@ -124,9 +165,9 @@ def save_registration():
 
     # 🔥 CREATE EVALUATION ROW HERE
     existing = conn.execute("""
-        SELECT id FROM evaluations
-        WHERE subject_id=? AND session_id=?
-    """, (subject_id, active_session_id)).fetchone()
+    SELECT id FROM evaluations
+    WHERE subject_id=? AND session_id=? AND teacher_id=?
+""", (subject_id, active_session_id, session["user_id"])).fetchone()
 
     if existing:
         conn.execute("""
@@ -152,7 +193,7 @@ def save_registration():
     conn.commit()
     conn.close()
 
-    return redirect("/save_assignment")
+    return redirect(url_for("save_assignment", subject_id=subject_id))
 
 @app.route("/save_assignment", methods=["GET", "POST"])
 def save_assignment():
@@ -160,7 +201,12 @@ def save_assignment():
     if "user_id" not in session:
         return redirect("/login")
 
-    subject_id = session.get("active_subject")
+    subject_id = request.args.get("subject_id", type=int)
+
+    if subject_id:
+        session["active_subject"] = subject_id
+    else:
+        subject_id = session.get("active_subject")
     active_session_id = session.get("active_session_id")
 
     if not subject_id or not active_session_id:
@@ -171,10 +217,10 @@ def save_assignment():
     evaluation = conn.execute("""
         SELECT id, data_json
         FROM evaluations
-        WHERE subject_id=? AND session_id=?
+        WHERE subject_id=? AND session_id=? AND teacher_id=?
         ORDER BY id DESC
         LIMIT 1
-    """, (subject_id, active_session_id)).fetchone()
+    """, (subject_id, active_session_id, session["user_id"])).fetchone()
 
     if not evaluation:
         conn.close()
@@ -218,7 +264,7 @@ def save_assignment():
     conn.commit()
     conn.close()
 
-    return redirect("/external_marks")
+    return redirect(url_for("external_marks", subject_id=subject_id))
 
 
 @app.route("/external_marks", methods=["GET"])
@@ -226,7 +272,12 @@ def external_marks():
     if "user_id" not in session:
         return redirect("/login")
 
-    subject_id = session.get("active_subject")
+    subject_id = request.args.get("subject_id", type=int)
+
+    if subject_id:
+        session["active_subject"] = subject_id
+    else:
+        subject_id = session.get("active_subject")
     active_session_id = session.get("active_session_id")
 
     if not subject_id or not active_session_id:
@@ -236,10 +287,10 @@ def external_marks():
     evaluation = conn.execute("""
         SELECT data_json
         FROM evaluations
-        WHERE subject_id=? AND session_id=?
+        WHERE subject_id=? AND session_id=? AND teacher_id=?
         ORDER BY id DESC
         LIMIT 1
-    """, (subject_id, active_session_id)).fetchone()
+    """, (subject_id, active_session_id, session["user_id"])).fetchone()
 
     conn.close()
 
@@ -502,7 +553,13 @@ def evaluate():
     if "user_id" not in session:
         return redirect("/login")
 
-    subject_id = session.get("active_subject")
+    subject_id = request.args.get("subject_id", type=int)
+
+    if subject_id:
+        session["active_subject"] = subject_id
+    else:
+        subject_id = session.get("active_subject")
+        
     active_session_id = session.get("active_session_id")
 
     if not subject_id or not active_session_id:
@@ -513,10 +570,10 @@ def evaluate():
     evaluation = conn.execute("""
         SELECT *
         FROM evaluations
-        WHERE subject_id=? AND session_id=?
+        WHERE subject_id=? AND session_id=? AND teacher_id=?
         ORDER BY id DESC
         LIMIT 1
-    """, (subject_id, active_session_id)).fetchone()
+    """, (subject_id, active_session_id, session["user_id"])).fetchone()
 
     if not evaluation:
         conn.close()
@@ -608,23 +665,32 @@ def evaluate():
 
 @app.route("/save_external_marks", methods=["POST"])
 def save_external_marks():
+
     if "user_id" not in session:
         return redirect("/login")
 
-    subject_id = session.get("active_subject")
+    # 🔥 FIX: Read subject_id from URL OR session
+    subject_id = request.args.get("subject_id", type=int)
+
+    if subject_id:
+        session["active_subject"] = subject_id
+    else:
+        subject_id = session.get("active_subject")
+
     active_session_id = session.get("active_session_id")
 
     if not subject_id or not active_session_id:
         return redirect("/teacher_dashboard")
 
     conn = get_db_connection()
+
     evaluation = conn.execute("""
         SELECT id, data_json
         FROM evaluations
-        WHERE subject_id=? AND session_id=?
+        WHERE subject_id=? AND session_id=? AND teacher_id=?
         ORDER BY id DESC
         LIMIT 1
-    """, (subject_id, active_session_id)).fetchone()
+    """, (subject_id, active_session_id, session["user_id"])).fetchone()
 
     if not evaluation:
         conn.close()
@@ -633,8 +699,8 @@ def save_external_marks():
     import json
     data = json.loads(evaluation["data_json"]) if evaluation["data_json"] else []
 
-    # 🔥 Update marks safely
     for student in data:
+
         roll = str(student.get("University Roll Number", "")).strip()
         registered = student.get("Registered", "")
         status = request.form.get(f"status_{roll}", "Present")
@@ -673,8 +739,8 @@ def save_external_marks():
     conn.commit()
     conn.close()
 
-    return redirect(url_for("evaluate"))
-
+    # 🔥 FIX: Pass subject_id forward
+    return redirect(url_for("evaluate", subject_id=subject_id))
 import json
 
 @app.route("/final_results")
@@ -690,10 +756,10 @@ def final_results():
     evaluation = conn.execute("""
         SELECT *
         FROM evaluations
-        WHERE subject_id=? AND session_id=?
+        WHERE subject_id=? AND session_id=? AND teacher_id=?
         ORDER BY id DESC
         LIMIT 1
-    """, (subject_id, active_session_id)).fetchone()
+    """, (subject_id, active_session_id, session["user_id"])).fetchone()
 
     if not evaluation:
         conn.close()
@@ -797,25 +863,36 @@ def download_pdf(eval_id):
 
 @app.route("/save_college_marks", methods=["POST"])
 def save_college_marks():
+
     if "user_id" not in session:
         return redirect("/login")
 
-    subject_id = session.get("active_subject")
+    # 🔥 FIX: Restore subject_id
+    subject_id = request.args.get("subject_id", type=int)
+
+    if subject_id:
+        session["active_subject"] = subject_id
+    else:
+        subject_id = session.get("active_subject")
+
     active_session_id = session.get("active_session_id")
+
+    if not subject_id or not active_session_id:
+        return redirect("/teacher_dashboard")
 
     conn = get_db_connection()
 
     evaluation = conn.execute("""
         SELECT id, data_json
         FROM evaluations
-        WHERE subject_id=? AND session_id=?
+        WHERE subject_id=? AND session_id=? AND teacher_id=?
         ORDER BY id DESC
         LIMIT 1
-    """, (subject_id, active_session_id)).fetchone()
+    """, (subject_id, active_session_id, session["user_id"])).fetchone()
 
     if not evaluation:
         conn.close()
-        return "Evaluation not found."
+        return redirect("/teacher_dashboard")
 
     import json
     data = json.loads(evaluation["data_json"])
@@ -854,26 +931,25 @@ def save_college_marks():
         student["Internal_Final"] = final_internal
         student["External_Final"] = final_external
         student["Total"] = final_internal + final_external
-        student["Result"] = "PASS" if final_internal >= 16 and final_external >= 24 else "FAIL"
+        student["Result"] = (
+            "PASS" if final_internal >= 16 and final_external >= 24
+            else "FAIL"
+        )
         student["Track"] = "College Evaluated"
 
-    # SAVE BACK
     conn.execute("""
         UPDATE evaluations
         SET data_json=?,
             stage='college_done',
             created_at=CURRENT_TIMESTAMP
         WHERE id=?
-    """, (
-        json.dumps(data),
-        evaluation["id"]
-    ))
+    """, (json.dumps(data), evaluation["id"]))
 
     conn.commit()
     conn.close()
 
-    return redirect(url_for("evaluate"))
-
+    # 🔥 FIX: Pass subject_id forward
+    return redirect(url_for("evaluate", subject_id=subject_id))
 @app.route("/download_college_list/<int:eval_id>")
 def download_college_list(eval_id):
 
@@ -949,23 +1025,25 @@ def login():
 
             if teacher and check_password_hash(teacher["password"], password):
 
-                # 🔴 Check Deactivated
-                if teacher and teacher["is_deactivated"] == 1:
+                # 🔴 Block Deactivated
+                if teacher["is_deactivated"] == 1:
                     error = "Your account is deactivated. Contact HOD."
-                else:
-                    session["user_id"] = teacher["id"]
-                    session["role"] = "TEACHER"
-                    session["is_super_admin"] = False
-                    session.permanent = True
+                    return render_template("login.html", error=error)
 
-                    # 🔥 FIRST LOGIN PASSWORD CHANGE
-                    if teacher["is_active"] == 0:
-                        return redirect("/change_password")
+                session["user_id"] = teacher["id"]
+                session["role"] = "TEACHER"
+                session["is_super_admin"] = False
+                session.permanent = True
 
-                    return redirect("/teacher_dashboard")
+                # First login password change
+                if teacher["is_active"] == 0:
+                    return redirect("/change_password")
+
+                return redirect("/teacher_dashboard")
 
             else:
                 error = "Invalid email or password"
+                return render_template("login.html", error=error)
 
         # =========================
         # 🔵 ADMIN LOGIN
@@ -1167,17 +1245,17 @@ def lock_marks():
     conn.execute("""
         UPDATE evaluations
         SET locked = 1
-        WHERE subject_id=? AND session_id=?
-    """, (subject_id, active_session_id))
+        WHERE subject_id=? AND session_id=? AND teacher_id=?
+    """, (subject_id, active_session_id, session["user_id"]))
 
     # 2️⃣ Get evaluation_id
     evaluation = conn.execute("""
         SELECT id, data_json
         FROM evaluations
-        WHERE subject_id=? AND session_id=?
+        WHERE subject_id=? AND session_id=? AND teacher_id=?
         ORDER BY id DESC
         LIMIT 1
-    """, (subject_id, active_session_id)).fetchone()
+    """, (subject_id, active_session_id, session["user_id"])).fetchone()
 
     if evaluation:
         import json
@@ -1419,7 +1497,7 @@ def hod_dashboard():
     SELECT *
     FROM teachers
     WHERE hod_id=?
-    AND is_deactivated=0
+    AND is_deactivated=0 AND is_deactivated=0
 """, (session["user_id"],)).fetchall()
 
     teachers = []
@@ -1669,6 +1747,10 @@ def assign_subject(teacher_id):
     "SELECT * FROM teachers WHERE id=? AND is_deactivated=0",
     (teacher_id,)
 ).fetchone()
+    
+    if teacher["is_deactivated"] == 1:
+        conn.close()
+        return "Cannot assign subject. Teacher is deactivated."
 
     if not teacher:
         conn.close()
@@ -1786,6 +1868,28 @@ def teacher_dashboard():
     if "user_id" not in session or session["role"] != "TEACHER":
         return redirect("/login")
 
+    conn = get_db_connection()
+
+    # 🔴 Fetch full teacher row ONCE
+    teacher = conn.execute(
+        "SELECT * FROM teachers WHERE id=?",
+        (session["user_id"],)
+    ).fetchone()
+
+    # Safety check
+    if not teacher:
+        conn.close()
+        session.clear()
+        return redirect("/login")
+
+    # 🔴 Block deactivated teacher
+    if teacher["is_deactivated"] == 1:
+        conn.close()
+        session.clear()
+        flash("Your account is deactivated. Contact HOD.", "danger")
+        return redirect("/login")
+
+    # ---- Session Setup ----
     if "session_label" not in session:
         session["session_label"] = get_current_session()
 
@@ -1796,26 +1900,7 @@ def teacher_dashboard():
 
     active_session_id = session["active_session_id"]
     session_label = session["session_label"]
-
-    conn = get_db_connection()
-    
-    teacher = conn.execute(
-        "SELECT name FROM teachers WHERE id=?",
-        (session["user_id"],)
-    ).fetchone()
-
-    teacher_status = conn.execute("""
-    SELECT is_deactivated
-    FROM teachers
-    WHERE id=?
-""", (session["user_id"],)).fetchone()
-
-    if teacher_status and teacher_status["is_deactivated"] == 1:
-        conn.close()
-        session.clear()
-        flash("Your account is deactivated. Contact HOD.", "danger")
-        return redirect("/login")
-
+ 
     subjects = conn.execute("""
     SELECT *
     FROM subjects
@@ -1828,8 +1913,8 @@ def teacher_dashboard():
     evaluations = conn.execute("""
     SELECT id, subject_id, stage, locked
     FROM evaluations
-    WHERE session_id=?
-""", (active_session_id,)).fetchall()
+    WHERE session_id=? AND teacher_id=?
+""", (active_session_id, session["user_id"])).fetchall()
 
 
     eval_map = {}
@@ -1847,10 +1932,9 @@ def teacher_dashboard():
 
         unlocked_map[ev["subject_id"]] = count
 
-
+    print("SUBJECT IDS:", [s["id"] for s in subjects])
+    print("EVAL SUBJECT IDS:", [e["subject_id"] for e in evaluations])
     conn.close()
-
-    eval_map = {ev["subject_id"]: ev for ev in evaluations}
 
     branch_map = {}
 
@@ -2491,10 +2575,10 @@ def edit_unlocked(subject_id):
     evaluation = conn.execute("""
         SELECT id, data_json
         FROM evaluations
-        WHERE subject_id=? AND session_id=?
+        WHERE subject_id=? AND session_id=? AND teacher_id=?
         ORDER BY id DESC
         LIMIT 1
-    """, (subject_id, active_session_id)).fetchone()
+    """, (subject_id, active_session_id, session["user_id"])).fetchone()
 
     if not evaluation:
         conn.close()
@@ -2588,6 +2672,27 @@ def edit_unlocked(subject_id):
         data=filtered_students,
         subject_id=subject_id
     )
+    
+@app.route("/debug_eval")
+def debug_eval():
+
+    if "user_id" not in session:
+        return "Not logged in"
+
+    subject_id = session.get("active_subject")
+    session_id = session.get("active_session_id")
+
+    conn = get_db_connection()
+
+    rows = conn.execute("""
+        SELECT id, subject_id, teacher_id, session_id, stage, locked
+        FROM evaluations
+        WHERE teacher_id=?
+    """, (session["user_id"],)).fetchall()
+
+    conn.close()
+
+    return "<br>".join([str(dict(r)) for r in rows])
     
 from database import init_db
 
