@@ -317,7 +317,16 @@ button:disabled,
 }
 
 .yellow-btn {
-    background:#ffc107;
+    background: #ffc107;
     color: black;
-    pointer-events:none;
+    border: none;
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: 0.2s ease;
+}
+
+.yellow-btn:hover {
+    background: #e0a800;
 }

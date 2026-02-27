@@ -96,6 +96,15 @@
         <button class="success-btn">View Result</button>
     </a>
 
+    <!-- 🔓 Edit Unlocked (if any) -->
+    {% if sub.get("locked") == 1 and sub.get("unlocked_count", 0) > 0 %}
+        <a href="/edit_unlocked/{{ sub['id'] }}">
+            <button class="yellow-btn">
+                Edit Unlocked ({{ sub["unlocked_count"] }})
+            </button>
+        </a>
+    {% endif %}
+
 {% elif sub["stage"] in ["registration_done", "assignment_done", "external_saved", "college_pending"] %}
 
     <!-- Continue Evaluation -->
