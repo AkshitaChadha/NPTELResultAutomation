@@ -96,6 +96,16 @@
         <button class="success-btn">View Result</button>
     </a>
 
+    {% if sub["locked"] == 0 %}
+    <form method="POST"
+        action="{{ url_for('reset_evaluation', subject_id=sub['id']) }}"
+        style="display:inline;">
+        <button class="danger-btn"
+                onclick="return confirm('Are you sure you want to reset this evaluation?')">
+            Reset Evaluation
+        </button>
+    </form>
+    {% endif %}
     <!-- 🔓 Edit Unlocked (if any) -->
     {% if sub.get("locked") == 1 and sub.get("unlocked_count", 0) > 0 %}
         <a href="/edit_unlocked/{{ sub['id'] }}">

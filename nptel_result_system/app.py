@@ -959,7 +959,9 @@ def save_college_marks():
         status = request.form.get(f"status_{roll}", "Present").strip()
         value = request.form.get(f"external_{roll}", "").strip()
 
-        internal_40 = student.get("Internal_Converted", 0)
+        assignment = float(student.get("Assignment Marks") or 0)
+        internal_40 = custom_round((assignment / 25) * 40)
+        student["Internal_Converted"] = internal_40
 
         # 🔴 COLLEGE ABSENT
         if status.upper() == "ABSENT":
@@ -2767,16 +2769,34 @@ def debug_eval():
 
     conn = get_db_connection()
 
-    rows = conn.execute("""
-        SELECT id, subject_id, teacher_id, session_id, stage, locked
+    evaluation = conn.execute("""
+        SELECT *
         FROM evaluations
-        WHERE teacher_id=?
-    """, (session["user_id"],)).fetchall()
+        WHERE subject_id=? AND session_id=? AND teacher_id=?
+        ORDER BY id DESC
+        LIMIT 1
+    """, (subject_id, session_id, session["user_id"])).fetchone()
 
     conn.close()
 
-    return "<br>".join([str(dict(r)) for r in rows])
-    
+    if not evaluation:
+        return "No evaluation found"
+
+    import json
+    data = json.loads(evaluation["data_json"])
+
+    # 🔍 Filter by roll number from URL
+    roll = request.args.get("roll")
+
+    if roll:
+        for student in data:
+            if str(student.get("University Roll Number")).strip() == roll:
+                return f"<pre>{json.dumps(student, indent=4)}</pre>"
+
+        return "Student not found."
+
+    # If no roll passed → show all
+    return f"<pre>{json.dumps(data, indent=4)}</pre>"    
 from database import init_db
 
 init_db()
