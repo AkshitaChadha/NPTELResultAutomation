@@ -107,11 +107,23 @@
 
 {% elif sub["stage"] in ["registration_done", "assignment_done", "external_saved", "college_pending"] %}
 
-    <!-- Continue Evaluation -->
+    <!-- Continue -->
     <a href="{{ url_for('upload') }}?subject_id={{ sub['id'] }}">
         <button class="primary-btn">Continue Evaluation</button>
     </a>
 
+    <!-- Reset -->
+    {% if sub["locked"] == 0 %}
+    <form method="POST"
+          action="{{ url_for('reset_evaluation', subject_id=sub['id']) }}"
+          style="display:inline;"
+          onsubmit="return confirm('Are you sure? This will permanently delete all evaluation data for this subject.');">
+
+        <button class="danger-btn">
+            Reset Evaluation
+        </button>
+    </form>
+    {% endif %}
 {% else %}
 
     <!-- Start Evaluation -->

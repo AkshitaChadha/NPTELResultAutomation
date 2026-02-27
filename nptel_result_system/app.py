@@ -664,6 +664,58 @@ def evaluate():
         
         
     )
+    
+
+@app.route("/reset_evaluation/<int:subject_id>", methods=["POST"])
+def reset_evaluation(subject_id):
+
+    if "user_id" not in session or session["role"] != "TEACHER":
+        return redirect("/login")
+
+    active_session_id = session.get("active_session_id")
+
+    conn = get_db_connection()
+
+    evaluation = conn.execute("""
+        SELECT id, locked
+        FROM evaluations
+        WHERE subject_id=? AND session_id=? AND teacher_id=?
+        ORDER BY id DESC
+        LIMIT 1
+    """, (subject_id, active_session_id, session["user_id"])).fetchone()
+
+    if not evaluation:
+        conn.close()
+        return redirect("/teacher_dashboard")
+
+    # 🚫 Safety: Don't allow reset if locked
+    if evaluation["locked"] == 1:
+        conn.close()
+        flash("Cannot reset. Evaluation is locked.", "danger")
+        return redirect("/teacher_dashboard")
+
+    evaluation_id = evaluation["id"]
+
+    # 🔥 Delete child records first
+    conn.execute("""
+        DELETE FROM evaluation_records
+        WHERE evaluation_id=?
+    """, (evaluation_id,))
+
+    # 🔥 Delete evaluation row
+    conn.execute("""
+        DELETE FROM evaluations
+        WHERE id=?
+    """, (evaluation_id,))
+
+    conn.commit()
+    conn.close()
+
+    flash("Evaluation has been reset successfully.", "success")
+
+    return redirect("/teacher_dashboard")
+
+
 @app.route("/save_external_marks", methods=["POST"])
 def save_external_marks():
 
