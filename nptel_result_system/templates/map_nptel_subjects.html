@@ -4,9 +4,9 @@
     <title>Map NPTEL Subjects</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
+
 <body>
 
-<!-- 🔹 NAVBAR (same as other pages) -->
 <div class="navbar">
     <h3>NPTEL Result System</h3>
 
@@ -14,69 +14,118 @@
         <a href="/manage_subjects">
             <button class="secondary-btn">Back</button>
         </a>
+
         <a href="/logout">
             <button class="primary-btn">Logout</button>
         </a>
     </div>
 </div>
 
-<!-- 🔹 MAIN CONTAINER -->
 <div class="mergecontainer">
 
-    <h2 class="page-title">Map NPTEL Subjects</h2>
-    <p>Select branches and semester for each NPTEL subject</p>
-    <br>
+<h2 class="page-title">Map NPTEL Subjects</h2>
 
-    <form method="POST" class="form-box">
+<p>
+Select branches and semester for each NPTEL subject.  
+Existing mappings are automatically pre-filled. You can modify them and save again.
+</p>
 
-    <table class="styled-table">
-        <thead>
-            <tr>
-                <th>Subject</th>
-                <th>Branches</th>
-                <th>Semester</th>
-            </tr>
-        </thead>
+<br>
 
-        <tbody>
-        {% for s in subjects %}
-            <tr>
-                <!-- Subject -->
-                <td>
-                    <b>{{ s.subject_code }}</b><br>
-                    {{ s.subject_name }}
-                    <input type="hidden" name="subject_id[]" value="{{ s.id }}">
-                </td>
+<form method="POST" class="form-box">
 
-                <!-- Branches -->
-                <td>
-                    {% for b in branches %}
-                        <label style="margin-right:12px;">
-                            <input type="checkbox"
-                                  name="branches_{{ s.id }}"
-                                  value="{{ b.name }}">
-                            {{ b.name }}
-                        </label>
-                    {% endfor %}
-                </td>
+<table class="styled-table">
 
-                <!-- Semester -->
-                <td>
-                    <select name="semester_{{ s.id }}" required>
-                        <option value="">Select</option>
-                        {% for sem in allowed_semesters %}
-                            <option value="{{ sem }}">{{ sem }}</option>
-                        {% endfor %}
-                    </select>
-                </td>
-            </tr>
-        {% endfor %}
-        </tbody>
-    </table>
+<thead>
+<tr>
+<th>Subject</th>
+<th>Branches</th>
+<th>Semester</th>
+</tr>
+</thead>
 
-    <br>
-    <button class="primary-btn">Save Mapping</button>
-    </form>
+<tbody>
+
+{% for s in subjects %}
+
+{% set sid = s.id|int %}
+
+<tr>
+
+<td>
+<b>{{ s.subject_code }}</b><br>
+{{ s.subject_name }}
+
+<input type="hidden" name="subject_id[]" value="{{ s.id }}">
+</td>
+
+
+<td>
+
+{% for b in branches %}
+
+<label style="margin-right:12px;">
+
+<input
+type="checkbox"
+name="branches_{{ s.id }}"
+value="{{ b.name }}"
+
+{% if mapping.get(sid) and b.name in mapping[sid]["branches"] %}
+checked
+{% endif %}
+
+>
+
+{{ b.name }}
+
+</label>
+
+{% endfor %}
+
+</td>
+
+
+<td>
+
+<select name="semester_{{ s.id }}" required>
+
+<option value="">Select</option>
+
+{% for sem in allowed_semesters %}
+
+<option
+value="{{ sem }}"
+
+{% if mapping.get(sid) and mapping[sid]["semester"] == sem %}
+selected
+{% endif %}
+
+>
+
+{{ sem }}
+
+</option>
+
+{% endfor %}
+
+</select>
+
+</td>
+
+</tr>
+
+{% endfor %}
+
+</tbody>
+
+</table>
+
+<br>
+
+<button class="primary-btn">Save Mapping</button>
+
+</form>
 
 </div>
 

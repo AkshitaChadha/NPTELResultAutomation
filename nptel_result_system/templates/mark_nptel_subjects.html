@@ -6,51 +6,70 @@
 </head>
 <body>
 
-<!-- 🔹 NAVBAR -->
 <div class="navbar">
     <h3>NPTEL Result System</h3>
+
     <div class="nav-actions">
-        <a href="/manage_subjects" class="secondary-btn">Back</a>
-        <a href="/logout" class="secondary-btn">Logout</a>
+        <a href="/manage_subjects">
+            <button class="secondary-btn">Back</button>
+        </a>
+
+        <a href="/logout">
+            <button class="secondary-btn">Logout</button>
+        </a>
     </div>
 </div>
 
-<!-- 🔹 MAIN CONTAINER -->
 <div class="container">
 
-    <h2 class="page-title">Select NPTEL Subjects</h2>
-    <p>Select the subjects that are evaluated through NPTEL.</p>
+<h2 class="page-title">Select NPTEL Subjects</h2>
 
-    <form method="POST" action="/save_nptel_subjects">
+<p>
+Select the subjects that are evaluated through NPTEL.
+</p>
 
-        <table class="styled-table">
-            <tr>
-                <th>NPTEL</th>
-                <th>Subject Code</th>
-                <th>Subject Name</th>
-            </tr>
+<form method="POST" action="/save_nptel_subjects">
 
-            {% for s in subjects %}
-            <tr>
-                <td style="text-align:center;">
-                    <input type="checkbox"
-       name="nptel_subjects"
-       value="{{ s.id }}"
-       {% if s.selected %}checked{% endif %}>
-                </td>
-                <td>{{ s.subject_code }}</td>
-                <td>{{ s.subject_name }}</td>
-            </tr>
-            {% endfor %}
-        </table>
+<table class="styled-table">
 
-        <br>
+<tr>
+<th>NPTEL</th>
+<th>Subject Code</th>
+<th>Subject Name</th>
+</tr>
 
-        <button class="primary-btn">
-            Save NPTEL Subjects
-        </button>
+{% for s in subjects %}
 
-    </form>
+<tr>
+
+<td style="text-align:center;">
+
+<input
+type="checkbox"
+name="nptel_subjects"
+value="{{ s.id }}"
+{% if s.selected %}checked{% endif %}
+>
+
+</td>
+
+<td>{{ s.subject_code }}</td>
+
+<td>{{ s.subject_name }}</td>
+
+</tr>
+
+{% endfor %}
+
+</table>
+
+<br>
+
+<button class="primary-btn">
+Save NPTEL Subjects
+</button>
+
+</form>
 
 </div>
 

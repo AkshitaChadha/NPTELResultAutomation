@@ -77,6 +77,7 @@
 
 <script>
 function loadData() {
+
     const branch = document.getElementById("branch").value;
     const semester = document.getElementById("semester").value;
 
@@ -95,42 +96,74 @@ function loadData() {
     fetch(`/get_nptel_subjects?branch=${branch}&semester=${semester}`)
         .then(res => res.json())
         .then(data => {
+
             if (data.length === 0) {
+
                 const opt = document.createElement("option");
                 opt.textContent = "No subjects available";
                 opt.disabled = true;
                 subjectSelect.appendChild(opt);
+
             } else {
+
                 data.forEach(sub => {
+
                     const opt = document.createElement("option");
                     opt.value = sub.id;
                     opt.textContent = sub.label;
                     subjectSelect.appendChild(opt);
+
                 });
+
                 subjectSelect.disabled = false;
             }
         });
+}
 
-    /* ---------- LOAD AVAILABLE SECTIONS ---------- */
-    fetch(`/get_available_sections?branch=${branch}&semester=${semester}`)
+
+/* ---------- LOAD SECTIONS AFTER SUBJECT SELECT ---------- */
+
+document.getElementById("subject").addEventListener("change", function () {
+
+    const branch = document.getElementById("branch").value;
+    const semester = document.getElementById("semester").value;
+    const subjectId = this.value;
+
+    const sectionSelect = document.getElementById("section");
+
+    sectionSelect.innerHTML = '<option value="">Select Section</option>';
+    sectionSelect.disabled = true;
+
+    if (!subjectId) return;
+
+    fetch(`/get_available_sections?branch=${branch}&semester=${semester}&subject_id=${subjectId}`)
         .then(res => res.json())
         .then(data => {
+
             if (data.length === 0) {
+
                 const opt = document.createElement("option");
                 opt.textContent = "No sections available";
                 opt.disabled = true;
                 sectionSelect.appendChild(opt);
+
             } else {
+
                 data.forEach(sec => {
+
                     const opt = document.createElement("option");
                     opt.value = sec;
                     opt.textContent = sec;
                     sectionSelect.appendChild(opt);
+
                 });
+
                 sectionSelect.disabled = false;
             }
+
         });
-}
+
+});
 </script>
 
 </body>
