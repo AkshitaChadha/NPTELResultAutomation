@@ -80,6 +80,11 @@ body{
     margin-top:20px;
 }
 
+.fixed-table{
+    table-layout: fixed;
+    width: 100%;
+}
+
 .styled-table th{
     background:#f3f4f6;
     padding:12px;
