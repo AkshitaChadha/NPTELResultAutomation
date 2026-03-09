@@ -88,21 +88,14 @@ checked
 
 <td>
 
-<select name="semester_{{ s.id }}" required>
+<select name="semester_{{ s.id }}">
 
-<option value="">Select</option>
+{% set selected_sem = mapping.get(s.id, {}).get('semester') %}
 
 {% for sem in allowed_semesters %}
 
-<option
-value="{{ sem }}"
-
-{% if mapping.get(sid) and mapping[sid]["semester"] == sem %}
-selected
-{% endif %}
-
->
-
+<option value="{{ sem }}"
+{% if selected_sem|string == sem|string %} selected {% endif %}>
 {{ sem }}
 
 </option>
@@ -110,7 +103,6 @@ selected
 {% endfor %}
 
 </select>
-
 </td>
 
 </tr>
