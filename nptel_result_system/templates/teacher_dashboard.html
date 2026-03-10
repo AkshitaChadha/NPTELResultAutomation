@@ -1,62 +1,53 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Teacher Dashboard</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-    
-</head>
-<body>
+{% extends "base.html" %}
 
-     <input type="hidden" name="subject_id" value="{{ session.get('active_subject') }}">
+{% block nav_items %}
 
-<!-- ===== NAVBAR ===== -->
-<div class="navbar">
-    <h3>NPTEL Result System</h3>
+<a href="/teacher_dashboard">Dashboard</a>
 
-    <div class="nav-actions">
-        <a href="/teacher_dashboard">
-            <button class="secondary-btn">Dashboard</button>
-        </a>
+{% endblock %}
 
-        <a href="/logout">
-            <button class="primary-btn">Logout</button>
-        </a>
-    </div>
-</div>
+
+{% block nav_right %}
+
+<a href="/logout">Logout</a>
+
+{% endblock %}
+
+
+
+{% block content %}
 
 <div class="container">
 
-<!-- ===== HEADER SECTION (SAME AS HOD) ===== -->
+<input type="hidden" name="subject_id" value="{{ session.get('active_subject') }}">
+
+
+<!-- ===== HEADER SECTION ===== -->
+
 <div style="display:flex; justify-content:space-between; align-items:flex-start;">
 
-    <!-- LEFT SIDE -->
-    <div>
-        <h2 class="page-title">Teacher Dashboard</h2>
-       <p><b>Teacher:</b> {{ teacher["name"] }}</p>
-       <p><b>Current Session:</b> {{ session_label }}</p>
-    </div>
+<!-- LEFT SIDE -->
 
-    <!-- RIGHT SIDE (SESSION DROPDOWN ONLY) -->
-    <div>
-        <form method="POST" action="/set_session">
-            <select name="session_label"
-                    onchange="this.form.submit()"
-                    class="session-select">
-                {% for s in all_sessions %}
-                <option value="{{ s }}"
-                        {% if s == session_label %}selected{% endif %}>
-                    {{ s }}
-                </option>
-                {% endfor %}
-            </select>
-        </form>
-    </div>
+<div>
+
+<h2 class="page-title">Teacher Dashboard</h2>
+
+<p><b>Teacher:</b> {{ teacher["name"] }}</p>
+
+<p><b>Current Session:</b> {{ session_label }}</p>
 
 </div>
 
+
+
+
+</div>
+
+
 <hr>
 
-<h3>Your Subjects</h3>
+
+
 
 
 {% if branch_map %}
@@ -68,95 +59,181 @@
 <table class="styled-table">
 
 <tr>
+
 <th>Semester</th>
 <th>Subject</th>
 <th>Action</th>
+
 </tr>
 
+
+
 {% for sem, subjects in semesters.items() %}
-    {% for sub in subjects %}
-    <tr>
 
-        <td>{{ sem }}</td>
+{% for sub in subjects %}
 
-        <td>
-            <b>{{ sub["subject_name"] }}</b><br>
-            <small>
-                Code: {{ sub["subject_code"] }} |
-                Section: {{ sub["section"] }}
-            </small>
-        </td>
+<tr>
 
-        <td>
+<td>{{ sem }}</td>
+
+<td>
+
+<b>{{ sub["subject_name"] }}</b><br>
+
+<small>
+Code: {{ sub["subject_code"] }} |
+Section: {{ sub["section"] }}
+</small>
+
+</td>
+
+<td>
+
+
 
 {% if sub["stage"] == "college_done" %}
 
-    <!-- View Result -->
-    <a href="{{ url_for('evaluate') }}?subject_id={{ sub['id'] }}">
-        <button class="success-btn">View Result</button>
-    </a>
+<!-- View Result -->
 
-    {% if sub["locked"] == 0 %}
-    <form method="POST"
-        action="{{ url_for('reset_evaluation', subject_id=sub['id']) }}"
-        style="display:inline;">
-        <button class="danger-btn"
-                onclick="return confirm('Are you sure you want to reset this evaluation?')">
-            Reset Evaluation
-        </button>
-    </form>
-    {% endif %}
-    <!-- 🔓 Edit Unlocked (if any) -->
-    {% if sub.get("locked") == 1 and sub.get("unlocked_count", 0) > 0 %}
-        <a href="/edit_unlocked/{{ sub['id'] }}">
-            <button class="yellow-btn">
-                Edit Unlocked ({{ sub["unlocked_count"] }})
-            </button>
-        </a>
-    {% endif %}
+<a href="{{ url_for('evaluate') }}?subject_id={{ sub['id'] }}">
 
-{% elif sub["stage"] in ["registration_done", "assignment_done", "external_saved", "college_pending"] %}
+<button class="success-btn">
+View Result
+</button>
 
-    <!-- Continue -->
-    <a href="{{ url_for('upload') }}?subject_id={{ sub['id'] }}">
-        <button class="primary-btn">Continue Evaluation</button>
-    </a>
+</a>
 
-    <!-- Reset -->
-    {% if sub["locked"] == 0 %}
-    <form method="POST"
-          action="{{ url_for('reset_evaluation', subject_id=sub['id']) }}"
-          style="display:inline;"
-          onsubmit="return confirm('Are you sure? This will permanently delete all evaluation data for this subject.');">
 
-        <button class="danger-btn">
-            Reset Evaluation
-        </button>
-    </form>
-    {% endif %}
-{% else %}
 
-    <!-- Start Evaluation -->
-    <a href="{{ url_for('upload') }}?subject_id={{ sub['id'] }}">
-        <button class="primary-btn">Start Evaluation</button>
-    </a>
+{% if sub["locked"] == 0 %}
+
+<form method="POST"
+      action="{{ url_for('reset_evaluation', subject_id=sub['id']) }}"
+      style="display:inline;">
+
+<button class="danger-btn"
+        onclick="return confirm('Are you sure you want to reset this evaluation?')">
+
+Reset Evaluation
+
+</button>
+
+</form>
 
 {% endif %}
 
+
+
+<!-- Edit unlocked -->
+
+{% if sub.get("locked") == 1 and sub.get("unlocked_count", 0) > 0 %}
+
+<a href="/edit_unlocked/{{ sub['id'] }}">
+
+<button class="yellow-btn">
+
+Edit Unlocked ({{ sub["unlocked_count"] }})
+
+</button>
+
+</a>
+
+{% endif %}
+
+
+
+{% elif sub["stage"] in ["registration_done", "assignment_done", "external_saved", "college_pending"] %}
+
+
+
+<!-- Continue Evaluation -->
+
+<div style="
+display:flex;
+gap:20px;
+align-items:center;
+flex-wrap:wrap;
+">
+
+<a href="{{ url_for('upload') }}?subject_id={{ sub['id'] }}">
+
+<button class="primary-btn">
+
+Continue Evaluation
+
+</button>
+
+</a>
+
+
+
+<!-- Reset -->
+
+{% if sub["locked"] == 0 %}
+
+<form method="POST"
+      action="{{ url_for('reset_evaluation', subject_id=sub['id']) }}"
+      style="display:inline;"
+      onsubmit="return confirm('Are you sure? This will permanently delete all evaluation data for this subject.');">
+
+<button class="primary-btn" style="background:red;">
+
+Reset Evaluation
+
+</button>
+
+</div>
+
+</form>
+
+{% endif %}
+
+
+
+{% else %}
+
+
+
+<!-- Start Evaluation -->
+
+<a href="{{ url_for('upload') }}?subject_id={{ sub['id'] }}">
+
+<button class="primary-btn">
+
+Start Evaluation
+
+</button>
+
+</a>
+
+
+
+{% endif %}
+
+
+
 </td>
-    </tr>
-    {% endfor %}
+
+</tr>
+
+{% endfor %}
+
 {% endfor %}
 
 </table>
 
 {% endfor %}
 
+
+
 {% else %}
+
 <p>No subjects assigned yet.</p>
+
 {% endif %}
+
+
 
 </div>
 
-</body>
-</html>
+{% endblock %}

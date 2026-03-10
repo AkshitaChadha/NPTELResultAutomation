@@ -1,32 +1,27 @@
-<!DOCTYPE html>
-<html>
-<head>
-<title>Final Results</title>
-<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
-<body>
+{% extends "base.html" %}
 
-    <input type="hidden" name="subject_id" value="{{ session.get('active_subject') }}">
+{% block nav_items %}
 
-<div class="navbar">
-    <h3>NPTEL Result System</h3>
+{% if session.get("role") == "TEACHER" %}
+<a href="/teacher_dashboard">Dashboard</a>
+{% elif session.get("role") == "HOD" %}
+<a href="/hod_dashboard">Dashboard</a>
+{% endif %}
 
-    <div class="nav-actions">
-        {% if session.get("role") == "TEACHER" %}
-        <a href="/teacher_dashboard">
-            <button class="secondary-btn">Dashboard</button>
-        </a>
-        {% elif session.get("role") == "HOD" %}
-        <a href="/hod_dashboard">
-            <button class="secondary-btn">Dashboard</button>
-        </a>
-        {% endif %}
+{% endblock %}
 
-        <a href="/logout">
-            <button class="primary-btn">Logout</button>
-        </a>
-    </div>
-</div>
+
+{% block nav_right %}
+
+<a href="/logout">Logout</a>
+
+{% endblock %}
+
+
+
+{% block content %}
+
+<input type="hidden" name="subject_id" value="{{ session.get('active_subject') }}">
 
 <div class="container">
 
@@ -39,52 +34,57 @@
 <!-- Download Button -->
 {% if can_download %}
 
-    <a href="/download_pdf/{{ evaluation_id }}">
-        <button class="primary-btn">
-            Download Final Result
-        </button>
-    </a>
+<a href="/download_pdf/{{ evaluation_id }}">
+<button class="primary-btn">
+Download Final Result
+</button>
+</a>
 
 {% else %}
 
-    <button class="primary-btn"
-            style="background:#bdc3c7;
-                   opacity:0.6;
-                   cursor:not-allowed;"
-            disabled>
-        Download Final Result
-    </button>
+<button class="primary-btn"
+        style="background:#bdc3c7;
+               opacity:0.6;
+               cursor:not-allowed;"
+        disabled>
+Download Final Result
+</button>
 
 {% endif %}
 
 
 
-    
-    {% if session.get("role") == "TEACHER" and stage == "college_done" %}
+{% if session.get("role") == "TEACHER" and stage == "college_done" %}
 
-    {% if not evaluation_locked %}
-        <form method="POST" action="/lock_marks">
-            <button class="danger-btn"
-                    onclick="return confirm('Once locked, marks cannot be changed. Continue?')">
-                Lock Marks
-            </button>
-        </form>
-    {% else %}
-        <button class="secondary-btn" disabled>
-            🔒 Locked
-        </button>
-    {% endif %}
+{% if not evaluation_locked %}
+
+<form method="POST" action="/lock_marks">
+
+<button class="danger-btn"
+        onclick="return confirm('Once locked, marks cannot be changed. Continue?')">
+
+Lock Marks
+
+</button>
+
+</form>
+
+{% else %}
+
+<button class="secondary-btn" disabled>
+🔒 Locked
+</button>
 
 {% endif %}
 
-
-
-
-    
+{% endif %}
 
 </div>
 
+
+
 <table class="styled-table">
+
 <tr>
 <th>Roll</th>
 <th>Name</th>
@@ -98,36 +98,51 @@
 </tr>
 
 {% for row in data %}
+
 <tr>
+
 <td>{{ row["University Roll Number"] }}</td>
+
 <td>{{ row["Student Name"] }}</td>
+
 <td>{{ row["Assignment Marks"] }}</td>
+
 <td>{{ row.get("Internal_Final","-") }}</td>
+
 <td>{{ row["NPTEL External Marks"] }}</td>
+
 <td>{{ row.get("External_Final","-") }}</td>
+
 <td>{{ row.get("Total","-") }}</td>
+
 <td>{{ row.get("Result","-") }}</td>
+
 <td>{{ row.get("Track","-") }}</td>
+
 </tr>
+
 {% endfor %}
 
 </table>
 
 {% else %}
+
 <p>No data available.</p>
+
 {% endif %}
 
 
-<!-- Show College Section ONLY if pending -->
+
+<!-- College Section -->
 
 {% if college_list|length > 0 %}
 
 <br><br>
 
-
 <h3>College Exam Students</h3>
 
 <table class="styled-table">
+
 <tr>
 <th>Roll</th>
 <th>Name</th>
@@ -135,102 +150,123 @@
 </tr>
 
 {% for row in college_list %}
+
 <tr>
+
 <td>{{ row["University Roll Number"] }}</td>
+
 <td>{{ row["Student Name"] }}</td>
+
 <td>{{ row["Result"] }}</td>
+
 </tr>
+
 {% endfor %}
+
 </table>
 
 {% endif %}
 
-<!-- Update Button (ALWAYS AVAILABLE) -->
- <br>
- <br>
-    {% if session.get("role") == "TEACHER"
+
+
+<br>
+
+<div style="
+display:flex;
+gap:20px;
+align-items:center;
+margin-top:20px;
+flex-wrap:wrap;
+">
+
+{% if session.get("role") == "TEACHER"
       and stage == "college_pending"
       and not evaluation_locked %}
 
-    <a href="/edit_college_marks">
-        <button class="primary-btn">
-            Update College Marks
-        </button>
-    </a>
-
-{% endif %}
-
-    
-   {% if not evaluation_locked %}
-
-    <button class="secondary-btn" onclick="openDownloadModal()">
-        Download College Exam List
+<a href="/edit_college_marks">
+    <button class="primary-btn">
+        Update College Marks
     </button>
+</a>
 
 {% endif %}
+
+
+
+{% if not evaluation_locked %}
+
+<button class="secondary-btn" onclick="openDownloadModal()">
+    Download College Exam List
+</button>
+
+{% endif %}
+
+</div>
+
+
 
 <!-- Modal -->
+
 <div id="downloadModal" class="modal">
-  <div class="modal-content" style="text-align:center; width:320px;">
 
-    <h3 style="margin-bottom:25px;">Select Download Format</h3>
+<div class="modal-content" style="text-align:center; width:320px;">
 
-    <div style="
-        display:flex;
-        flex-direction:column;
-        gap:15px;
-        margin-bottom:20px;
-    ">
+<h3 style="margin-bottom:25px;">Select Download Format</h3>
 
-      <a href="/download_college_excel" style="width:100%;">
-          <button class="primary-btn" style="width:100%;">
-              Download as Excel
-          </button>
-      </a>
+<div style="
+display:flex;
+flex-direction:column;
+gap:15px;
+margin-bottom:20px;
+">
 
-      <a href="/download_college_pdf" style="width:100%;">
-          <button class="primary-btn" style="width:100%;">
-              Download as PDF
-          </button>
-      </a>
+<a href="/download_college_excel" style="width:100%;">
+<button class="primary-btn" style="width:100%;">
+Download as Excel
+</button>
+</a>
 
-      <a href="/download_attendance_sheet" style="width:100%;">
-          <button class="primary-btn" style="width:100%;">
-              Download Attendance Sheet
-          </button>
-      </a>
+<a href="/download_college_pdf" style="width:100%;">
+<button class="primary-btn" style="width:100%;">
+Download as PDF
+</button>
+</a>
 
-    </div>
+<a href="/download_attendance_sheet" style="width:100%;">
+<button class="primary-btn" style="width:100%;">
+Download Attendance Sheet
+</button>
+</a>
 
-    <button class="secondary-btn"
-            style="width:100%;"
-            onclick="closeDownloadModal()">
-        Cancel
-    </button>
-
-  </div>
 </div>
+
+<button class="secondary-btn"
+        style="width:100%;"
+        onclick="closeDownloadModal()">
+Cancel
+</button>
+
+</div>
+
+</div>
+
 
 
 <script>
+
 function openDownloadModal() {
-    document.getElementById("downloadModal").style.display = "flex";
+document.getElementById("downloadModal").style.display = "flex";
 }
 
 function closeDownloadModal() {
-    document.getElementById("downloadModal").style.display = "none";
+document.getElementById("downloadModal").style.display = "none";
 }
+
 </script>
 
 
-<br><br>
 
-<div style="text-align:center;">
-<a href="{{ '/teacher_dashboard' if session.get('role') == 'TEACHER' else '/hod_dashboard' }}">
-<button class="secondary-btn">⬅ Back to Dashboard</button>
-</a>
-</div>
 
 </div>
-</body>
-</html>
+
+{% endblock %}

@@ -1,68 +1,206 @@
-<!DOCTYPE html>
-<html>
-<head>
-<title>NPTEL Result System</title>
+{% extends "base.html" %}
 
-<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
+{% block nav_items %}
 
-<body>
+{% if session.role == "HOD" %}
+<a href="/hod_dashboard">Dashboard</a>
+{% elif session.role == "TEACHER" %}
+<a href="/teacher_dashboard">Dashboard</a>
+{% endif %}
 
-<!-- ===== NAVBAR ===== -->
-<div class="navbar">
-    <h3>NPTEL Result System</h3>
+{% endblock %}
 
-    <div class="nav-actions">
 
-        {% if session.role == "HOD" %}
-            <a href="/hod_dashboard">
-                <button class="secondary-btn">Dashboard</button>
-            </a>
-        {% elif session.role == "TEACHER" %}
-            <a href="/teacher_dashboard">
-                <button class="secondary-btn">Dashboard</button>
-            </a>
-        {% endif %}
+{% block nav_right %}
 
-        <a href="/logout">
-            <button class="primary-btn">Logout</button>
-        </a>
+<a href="/logout">Logout</a>
 
-    </div>
-</div>
+{% endblock %}
 
-<div class="page-card">
 
-    {% if subject %}
-    <div class="subject-box">
 
-        <h3>Class Details</h3>
+{% block content %}
 
-        <p><strong>Branch:</strong> {{ subject["branch"] }}</p>
+<div class="container">
 
-        <p><strong>Class:</strong> Semester {{ subject["semester"] }} - Section {{ subject["section"] }}</p>
+{% if subject %}
 
-        <p><strong>Subject:</strong> {{ subject["subject_name"] }}</p>
+<div class="subject-box">
 
-        <p><strong>Subject Code:</strong> {{ subject["subject_code"] }}</p>
 
-    </div>
-    <br>
-    {% endif %}
+<div style="
+display:grid;
+grid-template-columns:1fr 1fr;
+gap:0px;
+">
 
-    <h2>Upload Student Excel Sheet</h2>
+<p><strong>Branch:</strong> {{ subject["branch"] }}</p>
 
-    <form action="/upload" method="POST" enctype="multipart/form-data" class="form-box">
+<p><strong>Subject Code:</strong> {{ subject["subject_code"] }}</p>
 
-        <div class="form-group">
-            <input type="file" name="file" class="primary-button" required>
-        </div>
+<p><strong>Class:</strong> Semester {{ subject["semester"] }} - Section {{ subject["section"] }}</p>
 
-        <button class="primary-btn">Upload & Preview</button>
-
-    </form>
+<p><strong>Subject:</strong> {{ subject["subject_name"] }}</p>
 
 </div>
 
-</body>
-</html>
+</div>
+
+<br>
+
+{% endif %}
+
+
+
+<div style="
+display:flex;
+gap:50px;
+align-items:stretch;
+flex-wrap:wrap;
+margin-top:20px;
+">
+
+<!-- ================= UPLOAD CARD ================= -->
+
+<div style="
+flex:1;
+min-width:380px;
+background:#ffffff;
+padding:28px;
+border-radius:12px;
+border:1px solid #e5e7eb;
+box-shadow:0 6px 18px rgba(0,0,0,0.05);
+">
+
+<h2 class="page-title">Upload Student Excel Sheet</h2>
+
+<p style="color:#6b7280; margin-bottom:15px;">
+Upload the Excel sheet containing student details.
+</p>
+
+<form action="/upload"
+      method="POST"
+      enctype="multipart/form-data"
+      class="form-box">
+
+<div class="form-group">
+
+<input type="file"
+       name="file"
+       id="excelFile"
+       required
+       style="
+padding:8px;
+border:1px solid #d1d5db;
+border-radius:6px;
+background:white;
+width:100%;
+">
+
+</div>
+
+<button class="primary-btn"
+        id="uploadBtn"
+        disabled
+        style="margin-top:10px;">
+
+Upload & Preview
+
+</button>
+
+</form>
+
+</div>
+
+
+
+<!-- ================= EXCEL FORMAT PREVIEW ================= -->
+
+<div style="
+flex:1;
+min-width:420px;
+background:#ffffff;
+padding:28px;
+border-radius:12px;
+border:1px solid #e5e7eb;
+box-shadow:0 6px 18px rgba(0,0,0,0.05);
+">
+
+<h3 style="margin-top:0;">Excel Format Example</h3>
+
+<p style="
+color:#6b7280;
+font-size:15px;
+margin-bottom:16px;
+">
+
+Your Excel sheet should follow this format.
+
+</p>
+
+
+<table style="
+width:100%;
+border-collapse:collapse;
+font-size:16px;
+box-shadow:0 4px 12px rgba(0,0,0,0.08);
+border-radius:8px;
+overflow:hidden;
+">
+
+<tr style="background:#e5e7eb;">
+<th style="border:1px solid #ccc; padding:12px 18px;">SNo</th>
+<th style="border:1px solid #ccc; padding:12px 18px;">University Roll Number</th>
+<th style="border:1px solid #ccc; padding:12px 18px;">Student Name</th>
+
+</tr>
+
+<tr>
+<td style="border:1px solid #ccc; padding:12px 18px;">1</td>
+<td style="border:1px solid #ccc; padding:12px 18px;">2101012345</td>
+<td style="border:1px solid #ccc; padding:12px 18px;">Aman Sharma</td>
+
+</tr>
+
+<tr>
+<td style="border:1px solid #ccc; padding:12px 18px;">2</td>
+<td style="border:1px solid #ccc; padding:12px 18px;">2101012346</td>
+<td style="border:1px solid #ccc; padding:12px 18px;">Priya Singh</td>
+
+</tr>
+
+<tr>
+<td style="border:1px solid #ccc; padding:12px 18px;">3</td>
+<td style="border:1px solid #ccc; padding:12px 18px;">2101012347</td>
+<td style="border:1px solid #ccc; padding:12px 18px;">Rahul Verma</td>
+
+</tr>
+
+</table>
+
+</div>
+
+</div>
+
+</div>
+
+
+
+<script>
+
+const fileInput = document.getElementById("excelFile");
+const uploadBtn = document.getElementById("uploadBtn");
+
+fileInput.addEventListener("change", function(){
+
+if(this.files.length > 0){
+uploadBtn.disabled = false;
+}else{
+uploadBtn.disabled = true;
+}
+
+});
+
+</script>
+
+{% endblock %}

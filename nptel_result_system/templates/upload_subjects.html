@@ -1,26 +1,131 @@
-<h2>Upload Subjects</h2>
+<div class="container">
 
-<form method="POST" action="/upload_subject" enctype="multipart/form-data" class="form-box">
-    <input type="file" name="file" required>
-    <br><br>
-    <button class="primary-btn">Upload</button>
+<h2 class="page-title">Upload Subjects</h2>
+
+<div style="
+display:flex;
+gap:60px;
+align-items:flex-start;
+flex-wrap:wrap;
+margin-top:25px;
+margin-bottom:30px;
+">
+
+<!-- LEFT : UPLOAD CARD -->
+
+<div style="
+flex:1;
+min-width:340px;
+background:#ffffff;
+padding:26px;
+border-radius:12px;
+border:1px solid #e5e7eb;
+box-shadow:0 6px 18px rgba(0,0,0,0.05);
+">
+
+<h3 style="margin-top:0;">Upload Subjects Excel</h3>
+
+<p style="color:#6b7280; font-size:14px; margin-bottom:14px;">
+Upload an Excel file containing the columns <b>subject_code</b> and <b>subject_name</b>.
+</p>
+
+<form method="POST"
+      action="/upload_subject"
+      enctype="multipart/form-data"
+      class="form-box">
+
+<div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+
+<input type="file"
+       name="file"
+       required
+       style="
+padding:8px;
+border:1px solid #d1d5db;
+border-radius:6px;
+background:white;
+">
+
+<button class="primary-btn">
+Upload
+</button>
+
+</div>
+
 </form>
 
+</div>
+
+
+<!-- RIGHT : EXCEL FORMAT -->
+
+<div style="flex:1; min-width:300px;">
+
+<h3 style="margin-top:0;">Excel Format Example</h3>
+
+<p style="color:#6b7280; font-size:14px;">
+Your Excel file should follow this structure.
+</p>
+
+<table style="
+border-collapse:collapse;
+font-size:15px;
+box-shadow:0 4px 12px rgba(0,0,0,0.08);
+border-radius:8px;
+overflow:hidden;
+">
+
+<tr style="background:#e5e7eb;">
+<th style="border:1px solid #ccc; padding:10px 18px;">subject_code</th>
+<th style="border:1px solid #ccc; padding:10px 18px;">subject_name</th>
+</tr>
+
+<tr>
+<td style="border:1px solid #ccc; padding:10px 18px;">CS301</td>
+<td style="border:1px solid #ccc; padding:10px 18px;">Data Structures</td>
+</tr>
+
+<tr>
+<td style="border:1px solid #ccc; padding:10px 18px;">CS305</td>
+<td style="border:1px solid #ccc; padding:10px 18px;">Operating Systems</td>
+</tr>
+
+<tr>
+<td style="border:1px solid #ccc; padding:10px 18px;">CS309</td>
+<td style="border:1px solid #ccc; padding:10px 18px;">Computer Networks</td>
+</tr>
+
+</table>
+
+</div>
+
+</div>
+
+
 {% if nptel_subjects %}
+
 <hr>
+
 <h3>NPTEL Subjects (Selected)</h3>
 
 <table class="styled-table">
+
 <tr>
-    <th>Code</th>
-    <th>Name</th>
+<th>Code</th>
+<th>Name</th>
 </tr>
 
 {% for s in nptel_subjects %}
+
 <tr>
-    <td>{{ s.subject_code }}</td>
-    <td>{{ s.subject_name }}</td>
+<td>{{ s.subject_code }}</td>
+<td>{{ s.subject_name }}</td>
 </tr>
+
 {% endfor %}
+
 </table>
+
 {% endif %}
+
+</div>

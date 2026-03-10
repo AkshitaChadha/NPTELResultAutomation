@@ -18,126 +18,219 @@
     color: #c0392b;
     border: 1px solid #c0392b;
 }
+
+.login-header{
+    background:white;
+    border-bottom:1px solid #e5e7eb;
+    padding:10px 0;
+}
+
+.login-header-inner{
+    width:95%;
+    margin:auto;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+}
+
+.login-logo{
+    height:120px;
+}
+
+.login-title{
+    text-align:right;
+}
+
+.login-title h1{
+    margin:0;
+    font-size:48px;
+    font-weight:700;
+    color:#2563eb;
+    text-align:center;
+  
+}
+
+.login-title p{
+    margin:0;
+    font-size:18px;
+    color:#6b7280;
+}
+
+.top-nav{
+    background:#0d6efd;
+    padding:16px 50px;
+}
+
+.top-nav a{
+    color:white;
+    text-decoration:none;
+    font-size:20px;
+}
+
+.page-title{
+    font-size:32px;
+}
+
+.primary-btn{
+    width:100%;
+    padding:10px 15px;
+    font-size:18px;
+    background:#0d6efd;
+}
 </style>
 
 </head>
 <body>
 
-<div class="navbar">
-    <h3>NPTEL Result System</h3>
-</div>
+<div class="login-header">
+    <div class="login-header-inner">
 
-<div class="container" style="max-width:500px; margin-top:60px;">
+        <img src="{{ url_for('static', filename='agc_logo.png') }}" class="login-logo">
 
-    <h2 class="page-title" style="text-align:center;">Login</h2>
-
-    <!-- 🔴 ERROR MESSAGE -->
-    {% if error %}
-        <div class="alert alert-danger">
-            {{ error }}
+        <div class="login-title">
+            <h1>NPTEL</h1>
+            <p>Result Automation System</p>
         </div>
-    {% endif %}
 
-    <form method="POST" style="margin-top:30px;">
+    </div>
+</div>
 
-        <!-- EMAIL -->
-        <input name="email"
-               id="email"
-               placeholder="Enter Email"
-               required
-               value="{{ email }}"
-               class="big-input">
+<div class="top-nav">
+    <a href="/login">Home</a>
+</div>
 
-        <br>
 
-        <!-- PASSWORD -->
-        <input name="password"
-               type="password"
-               placeholder="Enter Password"
-               required
-               class="big-input">
 
-        <br>
+<div class="page-wrapper container" style="max-width:500px; margin-top:60px;">
 
-        <!-- ROLE DROPDOWN -->
-        <select name="role"
-                id="roleSelect"
-                class="big-input">
-        </select>
+<h2 class="page-title" style="text-align:center;">Login</h2>
 
-        <br>
+{% if error %}
+<div class="alert alert-danger">
+{{ error }}
+</div>
+{% endif %}
 
-        <button class="primary-btn" style="width:100%;">
-            Login
-        </button>
+<form method="POST" style="margin-top:30px;">
 
-    </form>
+<input name="email"
+id="email"
+placeholder="Enter Email"
+required
+value="{{ email }}"
+class="big-input">
+
+<br>
+
+<input name="password"
+type="password"
+placeholder="Enter Password"
+required
+class="big-input">
+
+<br>
+
+<select name="role" id="roleSelect" class="big-input" required>
+<option value="" disabled selected>Select your role</option>
+</select>
+
+<br>
+
+<select name="session_label" class="big-input" required>
+
+{% for s in all_sessions %}
+<option value="{{ s }}" {% if s == current_session %}selected{% endif %}>
+{{ s }}
+</option>
+{% endfor %}
+
+</select>
+
+<br>
+
+<button class="primary-btn">
+Login
+</button>
+
+</form>
 
 </div>
+
 
 <script>
 
-function loadRoles(email, selectedRole=null) {
+function loadRoles(email, selectedRole=null){
 
-    if (!email) return;
+if (!email) return;
 
-    fetch("/check_roles?email=" + email)
-    .then(response => response.json())
-    .then(data => {
+fetch("/check_roles?email=" + email)
+.then(response => response.json())
+.then(data => {
 
-        let select = document.getElementById("roleSelect");
-        select.innerHTML = "";
+let select = document.getElementById("roleSelect");
+select.innerHTML = "";
 
-        // 🔴 Real HOD (Super Admin)
-        if (data.roles.includes("HOD")) {
+let roles = data.roles || [];
 
-            let superOption = document.createElement("option");
-            superOption.value = "ADMIN";
-            superOption.text = "Super Admin";
-            select.appendChild(superOption);
+if(roles.length > 1){
 
-            select.value = "ADMIN";
-            return;
-        }
+let placeholder = document.createElement("option");
+placeholder.text = "Select your role";
+placeholder.disabled = true;
+placeholder.selected = true;
+placeholder.value = "";
+select.appendChild(placeholder);
 
-        // 🟢 Teacher option
-        if (data.roles.includes("TEACHER")) {
-            let teacherOption = document.createElement("option");
-            teacherOption.value = "TEACHER";
-            teacherOption.text = "Teacher";
-            select.appendChild(teacherOption);
-        }
-
-        // 🟡 Admin option (promoted teacher)
-        if (data.roles.includes("ADMIN")) {
-            let adminOption = document.createElement("option");
-            adminOption.value = "ADMIN";
-            adminOption.text = "Admin";
-            select.appendChild(adminOption);
-        }
-
-        // 🔥 Restore previously selected role
-        if (selectedRole) {
-            select.value = selectedRole;
-        }
-
-    });
 }
 
-// 🔵 On email blur → load roles
-document.getElementById("email").addEventListener("blur", function() {
-    loadRoles(this.value);
+roles.forEach(role => {
+
+let option = document.createElement("option");
+
+if(role === "TEACHER"){
+option.value = "TEACHER";
+option.text = "Teacher";
+}
+
+if(role === "ADMIN"){
+option.value = "ADMIN";
+option.text = "Admin";
+}
+
+if(role === "HOD"){
+option.value = "ADMIN";
+option.text = "Super Admin";
+}
+
+select.appendChild(option);
+
 });
 
-// 🔥 AUTO LOAD ROLES ON PAGE LOAD (after invalid login)
-window.onload = function() {
+if(roles.length === 1){
+select.value = select.options[0].value;
+}
 
-    let existingEmail = "{{ email }}";
-    let previousRole = "{{ selected_role }}";
+if(selectedRole){
+select.value = selectedRole;
+}
 
-    if (existingEmail) {
-        loadRoles(existingEmail, previousRole);
-    }
+});
+
+}
+
+document.getElementById("email").addEventListener("blur", function(){
+loadRoles(this.value);
+});
+
+window.onload = function(){
+
+let existingEmail = "{{ email }}";
+let previousRole = "{{ selected_role }}";
+
+if(existingEmail){
+loadRoles(existingEmail, previousRole);
+}
+
 };
 
 </script>

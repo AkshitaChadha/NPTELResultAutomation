@@ -1,22 +1,21 @@
-<!DOCTYPE html>
-<html>
-<head>
-<title>Assignment Marks</title>
-<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
-<body>
+{% extends "base.html" %}
 
-<div class="navbar">
-    <h3>NPTEL Result System</h3>
-    <div class="nav-actions">
-        <a href="/teacher_dashboard">
-            <button class="secondary-btn">Dashboard</button>
-        </a>
-        <a href="/logout">
-            <button class="primary-btn">Logout</button>
-        </a>
-    </div>
-</div>
+{% block nav_items %}
+
+<a href="/teacher_dashboard">Dashboard</a>
+
+{% endblock %}
+
+
+{% block nav_right %}
+
+<a href="/logout">Logout</a>
+
+{% endblock %}
+
+
+
+{% block content %}
 
 <div class="container">
 
@@ -24,7 +23,7 @@
 
 <form method="POST">
 
-    <input type="hidden" name="subject_id" value="{{ session.get('active_subject') }}">
+<input type="hidden" name="subject_id" value="{{ session.get('active_subject') }}">
 
 <table class="styled-table">
 
@@ -48,15 +47,21 @@
 <td>{{ row.get("Registered","") }}</td>
 
 <td>
-    {% if row.get("Registered") == "Not Registered" %}
-        <input type="number" value="0" readonly>
-    {% else %}
-        <input type="number"
-               name="assignment_{{ row.get('University Roll Number') }}"
-               min="0"
-               max="25"
-               required>
-    {% endif %}
+
+{% if row.get("Registered") == "Not Registered" %}
+
+<input type="number" value="0" readonly>
+
+{% else %}
+
+<input type="number"
+       name="assignment_{{ row.get('University Roll Number') }}"
+       min="0"
+       max="25"
+       required>
+
+{% endif %}
+
 </td>
 
 </tr>
@@ -65,10 +70,13 @@
 </table>
 
 <br>
-<button type="submit" class="primary-btn">Save & Continue</button>
+
+<button type="submit" class="primary-btn">
+Save & Continue
+</button>
 
 </form>
 
 </div>
-</body>
-</html>
+
+{% endblock %}

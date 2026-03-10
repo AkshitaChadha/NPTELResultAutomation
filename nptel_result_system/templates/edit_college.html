@@ -1,8 +1,25 @@
-<!DOCTYPE html>
-<html>
-<head>
-<title>Update College External Marks</title>
-<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+{% extends "base.html" %}
+
+{% block nav_items %}
+
+{% if session.get("role") == "HOD" %}
+<a href="/hod_dashboard">Dashboard</a>
+{% elif session.get("role") == "TEACHER" %}
+<a href="/teacher_dashboard">Dashboard</a>
+{% endif %}
+
+{% endblock %}
+
+
+{% block nav_right %}
+
+<a href="/logout">Logout</a>
+
+{% endblock %}
+
+
+{% block content %}
+
 <style>
 .externalBox.faded {
     opacity: 0.4;
@@ -11,31 +28,6 @@
 }
 </style>
 
-</head>
-<body>
-
-<!-- ===== NAVBAR ===== -->
-<div class="navbar">
-    <h3>NPTEL Result System</h3>
-
-    <div class="nav-actions">
-
-        {% if session.get("role") == "HOD" %}
-        <a href="/hod_dashboard">
-            <button class="secondary-btn">Dashboard</button>
-        </a>
-        {% elif session.get("role") == "TEACHER" %}
-        <a href="/teacher_dashboard">
-            <button class="secondary-btn">Dashboard</button>
-        </a>
-        {% endif %}
-
-        <a href="/logout">
-            <button class="primary-btn">Logout</button>
-        </a>
-
-    </div>
-</div>
 
 <div class="container">
 
@@ -44,9 +36,6 @@
 <form action="/save_college_marks" method="POST" onsubmit="return validateForm()">
 
 <table class="styled-table">
-
-    
-
 
 <tr>
 <th>Roll</th>
@@ -57,10 +46,7 @@
 
 {% for row in data %}
 <tr>
-{% if unlocked_rolls is not none and row['University Roll Number'] not in unlocked_rolls %}
 
-    readonly
-{% endif %}
 <td>
 {{ row['University Roll Number'] }}
 <input type="hidden" name="roll" value="{{ row['University Roll Number'] }}">
@@ -103,7 +89,6 @@ Absent
        value="{% if row.get('College_External_Raw') != 'ABSENT' %}{{ row.get('College_External_Raw', '') }}{% endif %}"
        oninput="validateMarks(this)"
        {% if row.get('College_External_Raw') == 'ABSENT' %}readonly{% endif %}>
-
 </td>
 
 </tr>
@@ -111,13 +96,16 @@ Absent
 
 </table>
 
-
 <br>
-<button type="submit" class="primary-btn">Save & Re-evaluate</button>
+
+<button type="submit" class="primary-btn">
+Save & Re-evaluate
+</button>
 
 </form>
 
 </div>
+
 
 <script>
 
@@ -161,6 +149,7 @@ function toggleInput(roll, value){
     }
 }
 
+
 // Apply fade on page load for already ABSENT students
 document.querySelectorAll("select").forEach(select => {
     if (select.value === "ABSENT") {
@@ -169,27 +158,26 @@ document.querySelectorAll("select").forEach(select => {
     }
 });
 
+
 function validateMarks(input) {
 
     if (input.readOnly) return;
 
     const value = input.value;
 
-    // Remove non-numeric characters
     if (!/^\d*$/.test(value)) {
         input.value = value.replace(/\D/g, "");
         return;
     }
 
-    // Convert to number
     const num = Number(value);
 
-    // Prevent >60
     if (num > 60) {
         alert("College external marks cannot be greater than 60");
         input.value = 60;
     }
 }
+
 
 function validateForm() {
 
@@ -217,8 +205,6 @@ function validateForm() {
     return true;
 }
 
-
 </script>
 
-</body>
-</html>
+{% endblock %}

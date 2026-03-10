@@ -1,170 +1,253 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Assign Subject</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
+{% extends "base.html" %}
 
-<body>
+{% block nav_items %}
 
-<div class="navbar">
-    <h3>NPTEL Result System</h3>
+<a href="/hod_dashboard">Dashboard</a>
+<a href="/manage_branches">Branches</a>
+<a href="/manage_subjects">Subjects</a>
+<a href="/manage_teachers">Teachers</a>
 
-    <div class="nav-actions">
-        <a href="/hod_dashboard">
-            <button class="secondary-btn">Dashboard</button>
-        </a>
-        <a href="/logout">
-            <button class="primary-btn">Logout</button>
-        </a>
-    </div>
+{% endblock %}
+
+
+{% block nav_right %}
+
+<a href="/logout">Logout</a>
+
+{% endblock %}
+
+
+
+{% block content %}
+
+<div class="container">
+
+<h2 class="page-title">Assign Subject</h2>
+
+<!-- ================= TEACHER INFO ================= -->
+
+<div style="
+margin-bottom:25px;
+padding:12px 16px;
+background:#f9fafb;
+border-radius:8px;
+border:1px solid #e5e7eb;
+">
+
+Teacher: <b>{{ teacher["name"] }}</b>
+
 </div>
 
-<div class="page-card">
 
-<h2>Assign Subject</h2>
-
-<div class="subject-header">
-    Teacher: {{ teacher["name"] }}
-</div>
-
-<br>
 
 <form method="POST" class="form-box grid-2">
 
 <!-- ================= BRANCH ================= -->
+
 <div class="form-group">
-    <label>Branch</label><br>
-    <select name="branch" id="branch" required onchange="loadData()">
-        <option value="">Select Branch</option>
-        {% for branch in branches %}
-        <option value="{{ branch['name'] }}">{{ branch['name'] }}</option>
-        {% endfor %}
-    </select>
+
+<label style="margin-bottom:6px;">Branch</label>
+
+<select name="branch"
+        id="branch"
+        required
+        onchange="loadData()"
+        style="margin-top:6px;">
+
+<option value="">Select Branch</option>
+
+{% for branch in branches %}
+<option value="{{ branch['name'] }}">{{ branch['name'] }}</option>
+{% endfor %}
+
+</select>
+
 </div>
+
+
 
 <!-- ================= SEMESTER ================= -->
+
 <div class="form-group">
-    <label>Semester</label><br>
-    <select name="semester" id="semester" required onchange="loadData()">
-        <option value="">Select Semester</option>
-        {% for sem in semester_options %}
-        <option value="{{ sem }}">{{ sem }}</option>
-        {% endfor %}
-    </select>
+
+<label style="margin-bottom:6px;">Semester</label>
+
+<select name="semester"
+        id="semester"
+        required
+        onchange="loadData()"
+        style="margin-top:6px;">
+
+<option value="">Select Semester</option>
+
+{% for sem in semester_options %}
+<option value="{{ sem }}">{{ sem }}</option>
+{% endfor %}
+
+</select>
+
 </div>
 
-<!-- ================= SUBJECT (NPTEL ONLY) ================= -->
+
+
+<!-- ================= SUBJECT ================= -->
+
 <div class="form-group">
-    <label>Subject</label><br>
-    <select name="subject_id" id="subject" required disabled>
-        <option value="">Select Subject</option>
-    </select>
+
+<label style="margin-bottom:6px;">Subject</label>
+
+<select name="subject_id"
+        id="subject"
+        required
+        disabled
+        style="margin-top:6px;">
+
+<option value="">Select Subject</option>
+
+</select>
+
 </div>
+
+
 
 <!-- ================= SECTION ================= -->
+
 <div class="form-group">
-    <label>Section</label><br>
-    <select name="section" id="section" required disabled>
-        <option value="">Select Section</option>
-    </select>
+
+<label style="margin-bottom:6px;">Section</label>
+
+<select name="section"
+        id="section"
+        required
+        disabled
+        style="margin-top:6px;">
+
+<option value="">Select Section</option>
+
+</select>
+
 </div>
 
-<button class="green-btn full-width">Assign Subject</button>
+
+
+<!-- ================= BUTTON ================= -->
+
+<button class="green-btn full-width"
+        style="
+margin-top:20px;
+padding:12px;
+font-size:16px;
+">
+
+Assign Subject
+
+</button>
 
 </form>
+
 </div>
 
+
+
 <script>
+
 function loadData() {
 
-    const branch = document.getElementById("branch").value;
-    const semester = document.getElementById("semester").value;
+const branch = document.getElementById("branch").value;
+const semester = document.getElementById("semester").value;
 
-    const subjectSelect = document.getElementById("subject");
-    const sectionSelect = document.getElementById("section");
+const subjectSelect = document.getElementById("subject");
+const sectionSelect = document.getElementById("section");
 
-    subjectSelect.innerHTML = '<option value="">Select Subject</option>';
-    sectionSelect.innerHTML = '<option value="">Select Section</option>';
+subjectSelect.innerHTML = '<option value="">Select Subject</option>';
+sectionSelect.innerHTML = '<option value="">Select Section</option>';
 
-    subjectSelect.disabled = true;
-    sectionSelect.disabled = true;
+subjectSelect.disabled = true;
+sectionSelect.disabled = true;
 
-    if (!branch || !semester) return;
+if (!branch || !semester) return;
 
-    /* ---------- LOAD NPTEL SUBJECTS ---------- */
-    fetch(`/get_nptel_subjects?branch=${branch}&semester=${semester}`)
-        .then(res => res.json())
-        .then(data => {
 
-            if (data.length === 0) {
+/* ---------- LOAD NPTEL SUBJECTS ---------- */
 
-                const opt = document.createElement("option");
-                opt.textContent = "No subjects available";
-                opt.disabled = true;
-                subjectSelect.appendChild(opt);
+fetch(`/get_nptel_subjects?branch=${branch}&semester=${semester}`)
+.then(res => res.json())
+.then(data => {
 
-            } else {
+if (data.length === 0) {
 
-                data.forEach(sub => {
+const opt = document.createElement("option");
+opt.textContent = "No subjects available";
+opt.disabled = true;
+subjectSelect.appendChild(opt);
 
-                    const opt = document.createElement("option");
-                    opt.value = sub.id;
-                    opt.textContent = sub.label;
-                    subjectSelect.appendChild(opt);
-
-                });
-
-                subjectSelect.disabled = false;
-            }
-        });
 }
+else {
+
+data.forEach(sub => {
+
+const opt = document.createElement("option");
+opt.value = sub.id;
+opt.textContent = sub.label;
+subjectSelect.appendChild(opt);
+
+});
+
+subjectSelect.disabled = false;
+}
+
+});
+
+}
+
 
 
 /* ---------- LOAD SECTIONS AFTER SUBJECT SELECT ---------- */
 
 document.getElementById("subject").addEventListener("change", function () {
 
-    const branch = document.getElementById("branch").value;
-    const semester = document.getElementById("semester").value;
-    const subjectId = this.value;
+const branch = document.getElementById("branch").value;
+const semester = document.getElementById("semester").value;
+const subjectId = this.value;
 
-    const sectionSelect = document.getElementById("section");
+const sectionSelect = document.getElementById("section");
 
-    sectionSelect.innerHTML = '<option value="">Select Section</option>';
-    sectionSelect.disabled = true;
+sectionSelect.innerHTML = '<option value="">Select Section</option>';
+sectionSelect.disabled = true;
 
-    if (!subjectId) return;
+if (!subjectId) return;
 
-    fetch(`/get_available_sections?branch=${branch}&semester=${semester}&subject_id=${subjectId}`)
-        .then(res => res.json())
-        .then(data => {
 
-            if (data.length === 0) {
+fetch(`/get_available_sections?branch=${branch}&semester=${semester}&subject_id=${subjectId}`)
+.then(res => res.json())
+.then(data => {
 
-                const opt = document.createElement("option");
-                opt.textContent = "No sections available";
-                opt.disabled = true;
-                sectionSelect.appendChild(opt);
+if (data.length === 0) {
 
-            } else {
+const opt = document.createElement("option");
+opt.textContent = "No sections available";
+opt.disabled = true;
+sectionSelect.appendChild(opt);
 
-                data.forEach(sec => {
+}
+else {
 
-                    const opt = document.createElement("option");
-                    opt.value = sec;
-                    opt.textContent = sec;
-                    sectionSelect.appendChild(opt);
+data.forEach(sec => {
 
-                });
-
-                sectionSelect.disabled = false;
-            }
-
-        });
+const opt = document.createElement("option");
+opt.value = sec;
+opt.textContent = sec;
+sectionSelect.appendChild(opt);
 
 });
+
+sectionSelect.disabled = false;
+}
+
+});
+
+});
+
 </script>
 
-</body>
-</html>
+{% endblock %}

@@ -1173,13 +1173,20 @@ def login():
 
     error = None
     email = ""
-    selected_role = "TEACHER"
+    selected_role = ""
 
     if request.method == "POST":
 
         email = request.form["email"].strip().lower()
         password = request.form["password"]
         selected_role = request.form.get("role")
+
+        # 🔵 Session selected from login page
+        session_label = request.form.get("session_label")
+
+        if session_label:
+            session["session_label"] = session_label
+            session["active_session_id"] = get_or_create_session(session_label)
 
         conn = get_db_connection()
 
@@ -1202,36 +1209,32 @@ def login():
 
             if teacher and check_password_hash(teacher["password"], password):
 
-                # 🔴 Block Deactivated
+                # Block deactivated teacher
                 if teacher["is_deactivated"] == 1:
                     error = "Your account is deactivated. Contact HOD."
-                    return render_template("login.html", error=error)
+                else:
+                    session["user_id"] = teacher["id"]
+                    session["role"] = "TEACHER"
+                    session["is_super_admin"] = False
+                    session.permanent = True
 
-                session["user_id"] = teacher["id"]
-                session["role"] = "TEACHER"
-                session["is_super_admin"] = False
-                session.permanent = True
+                    if teacher["is_active"] == 0:
+                        return redirect("/change_password")
 
-                # First login password change
-                if teacher["is_active"] == 0:
-                    return redirect("/change_password")
-
-                return redirect("/teacher_dashboard")
+                    return redirect("/teacher_dashboard")
 
             else:
                 error = "Invalid email or password"
-                return render_template("login.html", error=error)
 
         # =========================
         # 🔵 ADMIN LOGIN
         # =========================
         elif selected_role == "ADMIN":
 
-            # 🟡 Teacher promoted to Admin
-            if teacher and teacher["is_admin"] == 1 \
-               and check_password_hash(teacher["password"], password):
+            # Teacher promoted to Admin
+            if teacher and teacher["is_admin"] == 1 and check_password_hash(teacher["password"], password):
 
-                if teacher.get("is_deactivated") == 1:
+                if teacher["is_deactivated"] == 1:
                     error = "Your account is deactivated. Contact HOD."
                 else:
                     session["user_id"] = teacher["id"]
@@ -1244,7 +1247,7 @@ def login():
 
                     return redirect("/hod_dashboard")
 
-            # 🔴 Real HOD (Super Admin)
+            # Real HOD (Super Admin)
             elif hod and check_password_hash(hod["password"], password):
 
                 session["user_id"] = hod["id"]
@@ -1260,11 +1263,17 @@ def login():
             else:
                 error = "Invalid email or password"
 
+        else:
+            error = "Please select your role."
+
+    # 🔵 Always send sessions to template
     return render_template(
         "login.html",
         error=error,
         email=email,
-        selected_role=selected_role
+        selected_role=selected_role,
+        all_sessions=get_all_sessions(),
+        current_session=get_current_session()
     )
 
 @app.route("/check_roles")
@@ -1389,23 +1398,6 @@ def get_all_sessions():
 
     return list(reversed(sessions))
 
-@app.route("/set_session", methods=["POST"])
-def set_session():
-
-    if "user_id" not in session:
-        return redirect("/login")
-
-    selected_session = request.form.get("session_label")
-
-    if selected_session:
-        session["session_label"] = selected_session
-        session["active_session_id"] = get_or_create_session(selected_session)
-
-    # 🔁 Redirect based on role
-    if session.get("role") == "HOD":
-        return redirect("/hod_dashboard")
-    else:
-        return redirect("/teacher_dashboard")
 
 @app.route("/lock_marks", methods=["POST"])
 def lock_marks():

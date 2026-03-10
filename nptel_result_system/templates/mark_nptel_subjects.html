@@ -1,24 +1,21 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Select NPTEL Subjects</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
-<body>
+{% extends "base.html" %}
 
-<div class="navbar">
-    <h3>NPTEL Result System</h3>
+{% block nav_items %}
 
-    <div class="nav-actions">
-        <a href="/manage_subjects">
-            <button class="secondary-btn">Back</button>
-        </a>
+<a href="/manage_subjects">Back</a>
 
-        <a href="/logout">
-            <button class="secondary-btn">Logout</button>
-        </a>
-    </div>
-</div>
+{% endblock %}
+
+
+{% block nav_right %}
+
+<a href="/logout">Logout</a>
+
+{% endblock %}
+
+
+
+{% block content %}
 
 <div class="container">
 
@@ -73,5 +70,4 @@ Save NPTEL Subjects
 
 </div>
 
-</body>
-</html>
+{% endblock %}

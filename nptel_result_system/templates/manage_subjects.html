@@ -1,113 +1,304 @@
-<!DOCTYPE html>
-<html>
-<head>
-<title>Manage Subjects</title>
-<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
-<body>
+{% extends "base.html" %}
 
-<div class="navbar">
-<h3>NPTEL Result System</h3>
-<div class="nav-actions">
-<a href="/hod_dashboard"><button class="secondary-btn">Dashboard</button></a>
-<a href="/logout"><button class="primary-btn">Logout</button></a>
-</div>
+{% block nav_items %}
 
-</div>
+<a href="/hod_dashboard">Dashboard</a>
+<a href="/manage_branches">Branches</a>
+<a href="/manage_subjects">Subjects</a>
+<a href="/manage_teachers">Teachers</a>
 
-<div class="mergecontainer">
-
-<h2 class="page-title">Manage Subjects</h2>
-<br>
-
-<!-- Manual Add 
-<form method="POST" class="form-box" style="margin-bottom:20px;">
-<input type="hidden" name="manual_add" value="1">
-
-<div class="form-group">
-<label>Subject Code</label>
-<br>
-<input name="subject_code" required>
-</div>
-
-<div class="form-group">
-<label>Subject Name</label>
-<br>
-<input name="subject_name" required>
-</div>
-
-<button class="primary-btn">Add Subject</button>
-</form>
-<hr>
--->
+{% endblock %}
 
 
-<!-- Excel Upload -->
-<form method="POST" action="/manage_subjects" enctype="multipart/form-data" class="form-box">
+{% block nav_right %}
+
+<a href="/logout">Logout</a>
+
+{% endblock %}
+
+
+
+{% block content %}
+
+<div class="container">
+
+
+
+
+<!-- ================= UPLOAD + FORMAT SECTION ================= -->
+
+<div style="
+display:flex;
+gap:50px;
+align-items:stretch;
+flex-wrap:wrap;
+margin-top:25px;
+margin-bottom:30px;
+">
+
+<!-- ================= LEFT CARD : UPLOAD ================= -->
+
+<div style="
+flex:1;
+min-width:380px;
+background:#ffffff;
+padding:28px;
+border-radius:12px;
+border:1px solid #e5e7eb;
+box-shadow:0 6px 18px rgba(0,0,0,0.05);
+display:flex;
+flex-direction:column;
+justify-content:center;
+">
+<h2 class="page-title">Upload Subjects Excel</h2>
+
+<p style="
+color:#6b7280;
+font-size:15px;
+margin-bottom:18px;
+line-height:1.5;
+">
+
+Upload an Excel file with the following columns:
+
+
+<b>subject_code</b>, <b>subject_name</b>
+
+</p>
+
+
+<form method="POST"
+      action="/manage_subjects"
+      enctype="multipart/form-data">
+
 <input type="hidden" name="excel_upload" value="1">
 
-<div class="form-group">
-<label>Upload Excel (Columns: subject_code, subject_name)</label>
-<br>
-<input type="file" name="file" required>
+
+<div style="
+display:flex;
+align-items:center;
+gap:16px;
+flex-wrap:wrap;
+">
+
+<input type="file"
+       name="file"
+       id="excelFile"
+       required
+       style="
+padding:8px;
+border:1px solid #d1d5db;
+border-radius:6px;
+background:white;
+width:80%;
+">
+
+
+<button class="primary-btn"
+        id="uploadBtn"
+        disabled
+        style="
+padding:9px 22px;
+font-size:15px;
+">
+
+Upload
+
+</button>
+
 </div>
 
-<button class="secondary-btn">Upload</button>
 </form>
-<br>
 
-<!-- ✅ Update NPTEL Subjects -->
-    <a href="/mark_nptel_subjects">
-        <button class="primary-btn">
-            Update NPTEL Subjects
-        </button>
-    </a>
+<div style="margin-top:20px; font-size:14px; color:#6b7280; line-height:1.6;">
+<b>Upload Rules</b>
+
+<ul style="margin-top:6px; padding-left:18px;">
+<li>Only .xlsx files allowed</li>
+<li>First row must contain column headers</li>
+</ul>
+
+</div>
+
+</div>
 
 
 
-<hr>
+<!-- ================= RIGHT CARD : EXCEL PREVIEW ================= -->
 
-<!-- Subject List -->
+<div style="
+flex:1;
+min-width:380px;
+background:#ffffff;
+padding:28px;
+border-radius:12px;
+border:1px solid #e5e7eb;
+box-shadow:0 6px 18px rgba(0,0,0,0.05);
+">
+
+<h2 class="page-title">Excel Format Example</h2>
+
+<p style="
+color:#6b7280;
+font-size:15px;
+margin-bottom:16px;
+">
+
+Your Excel file should follow this structure.
+
+</p>
+
+
+<table style="
+width:100%;
+border-collapse:collapse;
+font-size:16px;
+box-shadow:0 4px 12px rgba(0,0,0,0.08);
+border-radius:8px;
+overflow:hidden;
+">
+
+<tr style="background:#e5e7eb;">
+<th style="border:1px solid #ccc; padding:12px 18px;">subject_code</th>
+<th style="border:1px solid #ccc; padding:12px 18px;">subject_name</th>
+</tr>
+
+<tr>
+<td style="border:1px solid #ccc; padding:12px 18px;">CS301</td>
+<td style="border:1px solid #ccc; padding:12px 18px;">Data Structures</td>
+</tr>
+
+<tr>
+<td style="border:1px solid #ccc; padding:12px 18px;">CS305</td>
+<td style="border:1px solid #ccc; padding:12px 18px;">Operating Systems</td>
+</tr>
+
+<tr>
+<td style="border:1px solid #ccc; padding:12px 18px;">CS309</td>
+<td style="border:1px solid #ccc; padding:12px 18px;">Computer Networks</td>
+</tr>
+
+</table>
+
+</div>
+
+</div>
+
+
+
+
+
+
+
+<!-- ================= SUBJECT LIST ================= -->
+
 {% if semester_map %}
 
-  {% for sem, subs in semester_map.items() %}
+{% for sem, subs in semester_map.items() %}
 
-    <h3 style="margin-top:30px;">Semester {{ sem }}</h3>
+<h3 style="margin-top:35px;">Semester {{ sem }}</h3>
 
-    <table class="styled-table fixed-table">
-      <tr>
-        <th>Code</th>
-        <th>Name</th>
-        <th>Branches</th>
-        <th>Action</th>
-      </tr>
+<table class="styled-table fixed-table">
 
-      {% for sub in subs %}
-      <tr>
-        <td>{{ sub.subject_code }}</td>
-        <td>{{ sub.subject_name }}</td>
-        <td>
-          {% if sub.branches %}
-            {{ sub.branches }}
-          {% else %}
-            <span style="color:#888;">Not mapped</span>
-          {% endif %}
-        </td>
-        <td>
-          <a href="/delete_subject/{{ sub.id }}"
-             onclick="return confirm('Delete this subject?');">
-            <button class="secondary-btn">Delete</button>
-          </a>
-        </td>
-      </tr>
-      {% endfor %}
-    </table>
+<tr>
+<th>Code</th>
+<th>Name</th>
+<th>Branches</th>
+<th style="width:120px;">Action</th>
+</tr>
 
-  {% endfor %}
+{% for sub in subs %}
+
+<tr>
+
+<td>{{ sub.subject_code }}</td>
+
+<td>{{ sub.subject_name }}</td>
+
+<td>
+
+{% if sub.branches %}
+
+{{ sub.branches }}
 
 {% else %}
-  <p>No subjects added yet.</p>
+
+<span style="color:#888;">Not mapped</span>
+
 {% endif %}
+
+</td>
+
+<td>
+
+<a href="/delete_subject/{{ sub.id }}"
+   onclick="return confirm('Delete this subject?');">
+
+<button class="secondary-btn">
+Delete
+</button>
+
+</a>
+
+</td>
+
+</tr>
+
+{% endfor %}
+
+</table>
+
+{% endfor %}
+
+{% else %}
+
+<p>No subjects added yet.</p>
+
+{% endif %}
+
+
+
+<!-- ================= UPDATE NPTEL BUTTON ================= -->
+
+<div style="
+margin-top:30px;
+display:flex;
+justify-content:flex-start;
+">
+
+<a href="/mark_nptel_subjects">
+
+<button class="primary-btn"
+style="padding:10px 24px; font-size:15px;">
+
+Update NPTEL Subjects
+
+</button>
+
+</a>
+
 </div>
-</body>
-</html>
+
+
+</div>
+
+
+
+<script>
+
+const fileInput = document.getElementById("excelFile");
+const uploadBtn = document.getElementById("uploadBtn");
+
+fileInput.addEventListener("change", function(){
+
+    if(this.files.length > 0){
+        uploadBtn.disabled = false;
+    }else{
+        uploadBtn.disabled = true;
+    }
+
+});
+
+</script>
+
+{% endblock %}

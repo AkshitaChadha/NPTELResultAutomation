@@ -1,25 +1,21 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Map NPTEL Subjects</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
+{% extends "base.html" %}
 
-<body>
+{% block nav_items %}
 
-<div class="navbar">
-    <h3>NPTEL Result System</h3>
+<a href="/manage_subjects">Back</a>
 
-    <div class="nav-actions">
-        <a href="/manage_subjects">
-            <button class="secondary-btn">Back</button>
-        </a>
+{% endblock %}
 
-        <a href="/logout">
-            <button class="primary-btn">Logout</button>
-        </a>
-    </div>
-</div>
+
+{% block nav_right %}
+
+<a href="/logout">Logout</a>
+
+{% endblock %}
+
+
+
+{% block content %}
 
 <div class="mergecontainer">
 
@@ -97,12 +93,12 @@ checked
 <option value="{{ sem }}"
 {% if selected_sem|string == sem|string %} selected {% endif %}>
 {{ sem }}
-
 </option>
 
 {% endfor %}
 
 </select>
+
 </td>
 
 </tr>
@@ -121,5 +117,4 @@ checked
 
 </div>
 
-</body>
-</html>
+{% endblock %}
