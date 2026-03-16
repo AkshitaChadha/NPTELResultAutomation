@@ -5,7 +5,7 @@ from werkzeug.security import generate_password_hash
 def get_db_connection():
     conn = sqlite3.connect(
         "database.db",
-        timeout=30,                 # increase timeout
+        timeout=30,
         check_same_thread=False
     )
     conn.row_factory = sqlite3.Row
@@ -32,36 +32,53 @@ def init_db():
 
     # =========================
     # TEACHERS
-    #  - email UNIQUE globally
     # =========================
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS teachers (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    email TEXT UNIQUE NOT NULL,
-    password TEXT NOT NULL,
-    hod_id INTEGER NOT NULL,
-    is_active INTEGER DEFAULT 0,
-    is_admin INTEGER DEFAULT 0,
-    is_deactivated INTEGER DEFAULT 0
-)
-    """)
-
-    # =========================
-    # SUBJECT MASTER
-    #  - subject_code UNIQUE
-    # =========================
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS subjects_master (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        subject_code TEXT UNIQUE NOT NULL,
-        subject_name TEXT NOT NULL
+        name TEXT NOT NULL,
+        email TEXT UNIQUE NOT NULL,
+        password TEXT NOT NULL,
+        hod_id INTEGER NOT NULL,
+        is_active INTEGER DEFAULT 0,
+        is_admin INTEGER DEFAULT 0,
+        is_deactivated INTEGER DEFAULT 0
     )
     """)
 
     # =========================
+    # SUBJECT MASTER - NOW WITH HOD_ID
+    # =========================
+    # Check if hod_id column exists, if not add it
+    cursor.execute("PRAGMA table_info(subjects_master)")
+    columns = [col[1] for col in cursor.fetchall()]
+    
+    if 'hod_id' not in columns:
+        # Recreate table with hod_id
+        cursor.execute("DROP TABLE IF EXISTS subjects_master")
+        cursor.execute("""
+        CREATE TABLE subjects_master (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            subject_code TEXT NOT NULL,
+            subject_name TEXT NOT NULL,
+            hod_id INTEGER NOT NULL,
+            UNIQUE(subject_code, hod_id)
+        )
+        """)
+    else:
+        # Table already has hod_id, just ensure it's there
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS subjects_master (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            subject_code TEXT NOT NULL,
+            subject_name TEXT NOT NULL,
+            hod_id INTEGER NOT NULL,
+            UNIQUE(subject_code, hod_id)
+        )
+        """)
+
+    # =========================
     # BRANCHES
-    #  - SAME branch cannot repeat under SAME HOD
     # =========================
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS branches (
@@ -84,10 +101,9 @@ def init_db():
 
     # =========================
     # SUBJECTS (ASSIGNED)
-    #  - Same subject can't repeat for same teacher + session + sem + section
     # =========================
     cursor.execute("""
-    CREATE TABLE IF NOT EXISTS subjects (
+CREATE TABLE IF NOT EXISTS subjects (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     subject_code TEXT NOT NULL,
     subject_name TEXT NOT NULL,
@@ -97,70 +113,62 @@ def init_db():
     remark TEXT,
     teacher_id INTEGER NOT NULL,
     session_id INTEGER NOT NULL,
-
-    -- 🔥 THIS IS THE KEY FIX
-    UNIQUE(branch, semester, section, session_id)
-    )
-    """)
+    
+    -- This allows multiple subjects per section, but prevents duplicate assignments
+    UNIQUE(branch, semester, section, subject_code, session_id)
+)
+""")
 
     # =========================
     # NPTEL SUBJECT MAPPING
     # =========================
     cursor.execute("""
-CREATE TABLE IF NOT EXISTS nptel_subject_mapping (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    subject_id INTEGER NOT NULL,
-    branch TEXT,
-    semester TEXT,
-    session_id INTEGER NOT NULL,
-    UNIQUE(subject_id, branch, semester, session_id)
-)
-""")
+    CREATE TABLE IF NOT EXISTS nptel_subject_mapping (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        subject_id INTEGER NOT NULL,
+        branch TEXT,
+        semester TEXT,
+        session_id INTEGER NOT NULL,
+        UNIQUE(subject_id, branch, semester, session_id)
+    )
+    """)
+
     # =========================
     # EVALUATIONS
     # =========================
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS evaluations (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    subject_id INTEGER,
-    teacher_id INTEGER,
-    session_id INTEGER,
-    data_json TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    stage TEXT,
-    locked INTEGER DEFAULT 0,
-    unlocked_rolls TEXT
-
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        subject_id INTEGER,
+        teacher_id INTEGER,
+        session_id INTEGER,
+        data_json TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        stage TEXT,
+        locked INTEGER DEFAULT 0,
+        unlocked_rolls TEXT
     )
     """)
 
-    conn.commit()
-
-
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS evaluation_students (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    evaluation_id INTEGER,
-    sno TEXT,
-    roll_no TEXT,
-    student_name TEXT,
-    registered TEXT,
-    assignment_marks REAL,
-    attendance TEXT,
-    external_marks REAL,
-    track TEXT,
-    result TEXT,
-    FOREIGN KEY (evaluation_id) REFERENCES evaluations(id)
-)
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        evaluation_id INTEGER,
+        sno TEXT,
+        roll_no TEXT,
+        student_name TEXT,
+        registered TEXT,
+        assignment_marks REAL,
+        attendance TEXT,
+        external_marks REAL,
+        track TEXT,
+        result TEXT,
+        FOREIGN KEY (evaluation_id) REFERENCES evaluations(id)
+    )
     """)
 
-    conn.commit()
-
-
-    
-
     # =========================
-    # EVALUATION RECORDS (Per Student Lock)
+    # EVALUATION RECORDS
     # =========================
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS evaluation_records (
@@ -170,7 +178,6 @@ CREATE TABLE IF NOT EXISTS nptel_subject_mapping (
         locked INTEGER DEFAULT 1
     )
     """)
-
 
     # =========================
     # LOAD HOD CONFIG
@@ -198,7 +205,6 @@ CREATE TABLE IF NOT EXISTS nptel_subject_mapping (
                 ))
 
         conn.commit()
-
 
     except Exception as e:
         print("HOD config load error:", e)

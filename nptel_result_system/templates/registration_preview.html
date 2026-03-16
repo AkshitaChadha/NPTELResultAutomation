@@ -1,71 +1,160 @@
 {% extends "base.html" %}
 
 {% block nav_items %}
-
 <a href="/teacher_dashboard">Dashboard</a>
-
 {% endblock %}
-
 
 {% block nav_right %}
-
 <a href="/logout">Logout</a>
-
 {% endblock %}
-
-
 
 {% block content %}
 
+
 <div class="container">
 
-<h2 class="page-title">Select Registration Status</h2>
+<h2 class="page-title">
+    {% if upload_type == "full" %}
+        Review Student Registration Status
+    {% else %}
+        Select Registration Status
+    {% endif %}
+</h2>
 
-<form action="/save_registration" method="POST">
+{% if upload_type == "full" %}
+<p style="margin-bottom: 20px; color: #64748b; font-family: inherit;">Review and modify registration status if needed. All data from Excel has been pre-filled.</p>
+{% endif %}
+
+<form id="registrationForm" action="/save_registration" method="POST">
 
 <input type="hidden" name="subject_id" value="{{ session.get('active_subject') }}">
+<input type="hidden" name="upload_type" value="{{ upload_type }}">
 
 <table class="styled-table">
-
-<tr>
-<th>S.No</th>
-<th>University Roll No</th>
-<th>Student Name</th>
-<th>Registered</th>
-</tr>
-
-{% for row in data %}
-<tr>
-
-<td>
-{{ row["SNo"] }}
-<input type="hidden" name="roll[]" value="{{ row['University Roll Number'] }}">
-</td>
-
-<td>{{ row["University Roll Number"] }}</td>
-
-<td>{{ row["Student Name"] }}</td>
-
-<td>
-<select name="registered[]">
-<option value="Registered">Registered</option>
-<option value="Not Registered">Not Registered</option>
-</select>
-</td>
-
-</tr>
-{% endfor %}
-
+    <thead>
+        <tr>
+            <th>S.No</th>
+            <th>University Roll No</th>
+            <th>Student Name</th>
+            <th>Status</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in data %}
+        <tr>
+            <td>
+                {{ row["SNo"] }}
+                <input type="hidden" name="roll[]" value="{{ row['University Roll Number'] }}">
+            </td>
+            <td>{{ row["University Roll Number"] }}</td>
+            <td>{{ row["Student Name"] }}</td>
+            <td>
+                <select name="registered[]" class="status-select" onchange="updateStatusColor(this)">
+                    <option value="Registered" 
+                        {% if row.get('Registered') == 'Registered' %}selected{% endif %}>
+                        Registered
+                    </option>
+                    <option value="Enrolled"
+                        {% if row.get('Registered') == 'Enrolled' %}selected{% endif %}>
+                        Enrolled
+                    </option>
+                    <option value="Not Enrolled"
+                        {% if row.get('Registered') == 'Not Enrolled' %}selected{% endif %}>
+                        Not Enrolled
+                    </option>
+                </select>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
 </table>
 
 <br>
 
-<button type="submit" class="primary-btn">
-Save & Continue
+<button type="button" class="primary-btn" onclick="showConfirmModal()">
+    {% if upload_type == "full" %}
+        Save & Continue to Assignment
+    {% else %}
+        Save & Continue
+    {% endif %}
 </button>
 
 </form>
 
 </div>
+
+<!-- Confirmation Modal -->
+<div id="confirmModal" class="modal">
+    <div class="modal-content">
+        <h3>Confirm Submission</h3>
+        <p>Please verify all registration statuses carefully. Once saved, you cannot return to this page.</p>
+        <div class="modal-buttons">
+            <button class="btn-confirm" onclick="submitForm()">Submit</button>
+            <button class="btn-cancel" onclick="closeConfirmModal()">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<script>
+// Update select text color based on selected option
+function updateStatusColor(select) {
+    select.classList.remove('registered-selected', 'enrolled-selected', 'notenrolled-selected');
+    
+    if (select.value === 'Registered') {
+        select.classList.add('registered-selected');
+    } else if (select.value === 'Enrolled') {
+        select.classList.add('enrolled-selected');
+    } else if (select.value === 'Not Enrolled') {
+        select.classList.add('notenrolled-selected');
+    }
+}
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.status-select').forEach(select => {
+        updateStatusColor(select);
+    });
+    
+    // Prevent back navigation
+    window.history.pushState(null, null, window.location.href);
+    window.onpopstate = function () {
+        window.history.go(1);
+    };
+});
+
+// Modal functions
+let formToSubmit = null;
+
+function showConfirmModal() {
+    formToSubmit = document.getElementById('registrationForm');
+    document.getElementById('confirmModal').style.display = 'flex';
+}
+
+function submitForm() {
+    if (formToSubmit) {
+        formToSubmit.submit();
+    }
+    closeConfirmModal();
+}
+
+function closeConfirmModal() {
+    document.getElementById('confirmModal').style.display = 'none';
+    formToSubmit = null;
+}
+
+window.onclick = function(event) {
+    const modal = document.getElementById('confirmModal');
+    if (event.target == modal) {
+        modal.style.display = 'none';
+        formToSubmit = null;
+    }
+}
+
+document.querySelectorAll('.status-select').forEach(select => {
+    select.addEventListener('change', function() {
+        updateStatusColor(this);
+    });
+});
+</script>
 
 {% endblock %}

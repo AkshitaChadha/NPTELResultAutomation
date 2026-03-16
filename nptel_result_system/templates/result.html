@@ -1,272 +1,362 @@
 {% extends "base.html" %}
 
 {% block nav_items %}
-
 {% if session.get("role") == "TEACHER" %}
 <a href="/teacher_dashboard">Dashboard</a>
 {% elif session.get("role") == "HOD" %}
 <a href="/hod_dashboard">Dashboard</a>
 {% endif %}
-
 {% endblock %}
-
 
 {% block nav_right %}
-
 <a href="/logout">Logout</a>
-
 {% endblock %}
 
-
-
 {% block content %}
-
 <input type="hidden" name="subject_id" value="{{ session.get('active_subject') }}">
 
 <div class="container">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px;">
+        <h2 class="page-title" style="margin: 0;">Final Evaluation</h2>
+        
+        <div style="display:flex; gap:15px; flex-wrap:wrap;">
+            <!-- Download Button -->
+            {% if can_download %}
+            <a href="{{ url_for('download_pdf', eval_id=evaluation_id) }}">
+                <button class="primary-btn">Download Final Result</button>
+            </a>
+            {% else %}
+            <button class="primary-btn" style="background:#bdc3c7; opacity:0.6; cursor:not-allowed;" disabled>
+                Download Final Result
+            </button>
+            {% endif %}
 
-<h2 class="page-title">Final Evaluation</h2>
+            <!-- Lock Marks Button -->
+            {% if session.get("role") == "TEACHER" and stage == "college_done" and not evaluation_locked %}
+            <form method="POST" action="{{ url_for('lock_marks') }}" style="display: inline;" id="lockForm">
+                <button type="button" class="danger-btn" onclick="confirmAction('Once locked, marks cannot be changed. Are you sure you want to continue?', function() { document.getElementById('lockForm').submit(); })">
+                    Lock Marks
+                </button>
+            </form>
+            {% endif %}
+            
+            <!-- Locked indicator -->
+            {% if evaluation_locked %}
+            <button class="secondary-btn" disabled>🔒 Locked</button>
+            {% endif %}
+        </div>
+    </div>
 
-{% if data|length > 0 %}
+    <!-- Final Results Table -->
+    {% if final_list and final_list|length > 0 %}
+    <table class="styled-table">
+        <thead>
+            <tr>
+                <th>Roll</th>
+                <th>Name</th>
+                <th>NPTEL Assignment</th>
+                <th>College Internal</th>
+                <th>NPTEL External</th>
+                <th>College External</th>
+                <th>Result</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in final_list %}
+            <tr>
+                <td>{{ row["University Roll Number"] }}</td>
+                <td>{{ row["Student Name"] }}</td>
+                
+                <!-- NPTEL Assignment - remove .0 -->
+                <td>
+                    {% set assign = row["Assignment Marks"] %}
+                    {% if assign in ["NA", "", None] %}
+                        NA
+                    {% elif assign is number and assign == assign|int %}
+                        {{ assign|int }}
+                    {% else %}
+                        {{ assign }}
+                    {% endif %}
+                </td>
 
-<div style="display:flex; gap:15px; margin-bottom:20px;">
+                <!-- College Internal - remove .0 -->
+                <td>
+                    {% set internal = row.get("Internal_Final", 0) %}
+                    {% if internal in ["", None, "-"] %}
+                        0
+                    {% elif internal is number and internal == internal|int %}
+                        {{ internal|int }}
+                    {% else %}
+                        {{ internal }}
+                    {% endif %}
+                </td>
+                
+                <!-- NPTEL External - "Absent" with capital A, rest small, in red -->
+                <td>
+                    {% set nptel = row["NPTEL External Marks"] %}
+                    {% if nptel == "Absent" or nptel == "absent" or nptel == "ABSENT" %}
+                        <span style="color: #dc2626; font-weight: 500;">Absent</span>
+                    {% elif nptel in ["NA", "NOT ENROLLED", "ENROLLED - NO EXAM", "", None] %}
+                        NA
+                    {% elif nptel is number and nptel == nptel|int %}
+                        {{ nptel|int }}
+                    {% else %}
+                        {{ nptel }}
+                    {% endif %}
+                </td>
+                
+                <!-- College External - "Absent" with capital A, rest small, in red -->
+                <td>
+                    {% set external = row.get("External_Final","-") %}
+                    {% if external == "Absent" or external == "absent" or external == "ABSENT" or row.get("College_External_Raw") == "Absent" %}
+                        <span style="color: #dc2626; font-weight: 500;">Absent</span>
+                    {% elif external in ["NA", "", None, "-"] %}
+                        NA
+                    {% elif external is number and external == external|int %}
+                        {{ external|int }}
+                    {% else %}
+                        {{ external }}
+                    {% endif %}
+                </td>
+                
+                <!-- Result - ALWAYS PASS/FAIL, never Absent -->
+                <td>
+                    {% set nptel_absent = row.get("NPTEL External Marks") in ["Absent", "absent", "ABSENT"] %}
+                    {% set college_absent = row.get("External_Final") in ["Absent", "absent", "ABSENT"] or row.get("College_External_Raw") in ["Absent", "absent", "ABSENT"] %}
+                    
+                    {% if nptel_absent or college_absent %}
+                        <span style="color: #dc2626; font-weight: 600;">FAIL</span>
+                    {% elif row.get("Result") == "PASS" %}
+                        <span style="color: #059669; font-weight: 600;">PASS</span>
+                    {% else %}
+                        <span style="color: #dc2626; font-weight: 600;">FAIL</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
 
-<!-- Download Button -->
-{% if can_download %}
+    <!-- College Exam Students Section (if any remain) -->
+    {% if college_list and college_list|length > 0 %}
+    <br>
+    <h2>College Exam Students</h2>
+    <table class="styled-table">
+        <thead>
+            <tr>
+                <th>Roll</th>
+                <th>Name</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in college_list %}
+            <tr>
+                <td>{{ row["University Roll Number"] }}</td>
+                <td>{{ row["Student Name"] }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
 
-<a href="/download_pdf/{{ evaluation_id }}">
-<button class="primary-btn">
-Download Final Result
-</button>
-</a>
+    <br>
+    <div style="display:flex; gap:20px; align-items:center; margin-top:20px; flex-wrap:wrap;">
+        <!-- Update College Marks Button -->
+        {% if session.get("role") == "TEACHER" and not evaluation_locked %}
+        <a href="{{ url_for('edit_college_marks') }}?subject_id={{ session.get('active_subject') }}">
+            <button class="primary-btn">Update College Marks</button>
+        </a>
+        {% endif %}
 
-{% else %}
+        <!-- Download College List Button -->
+        <button class="secondary-btn" onclick="openDownloadModal()">
+            Download College Exam List
+        </button>
+    </div>
+    {% endif %}
 
-<button class="primary-btn"
-        style="background:#bdc3c7;
-               opacity:0.6;
-               cursor:not-allowed;"
-        disabled>
-Download Final Result
-</button>
-
-{% endif %}
-
-
-
-{% if session.get("role") == "TEACHER" and stage == "college_done" %}
-
-{% if not evaluation_locked %}
-
-<form method="POST" action="/lock_marks">
-
-<button class="danger-btn"
-        onclick="return confirm('Once locked, marks cannot be changed. Continue?')">
-
-Lock Marks
-
-</button>
-
-</form>
-
-{% else %}
-
-<button class="secondary-btn" disabled>
-🔒 Locked
-</button>
-
-{% endif %}
-
-{% endif %}
-
+    <!-- Download Modal -->
+    <div id="downloadModal" class="modal">
+        <div class="modal-content">
+            <h3>Select Download Format</h3>
+            <div style="display:flex; flex-direction:column; gap:12px; margin:20px 0;">
+                <a href="{{ url_for('download_college_excel', eval_id=evaluation_id) }}">
+                    <button class="primary-btn" style="width:100%;">Download as Excel</button>
+                </a>
+                <a href="{{ url_for('download_college_pdf', eval_id=evaluation_id) }}">
+                    <button class="primary-btn" style="width:100%;">Download as PDF</button>
+                </a>
+                <a href="{{ url_for('download_attendance_sheet', eval_id=evaluation_id) }}">
+                    <button class="primary-btn" style="width:100%;">Download Attendance Sheet</button>
+                </a>
+            </div>
+            <button class="secondary-btn" style="width:100%;" onclick="closeDownloadModal()">Cancel</button>
+        </div>
+    </div>
 </div>
 
-
-
-<table class="styled-table">
-
-<tr>
-<th>Roll</th>
-<th>Name</th>
-<th>NPTEL Assignment</th>
-<th>College Internal</th>
-<th>NPTEL Exam</th>
-<th>College External</th>
-<th>Total</th>
-<th>Result</th>
-<th>Track</th>
-</tr>
-
-{% for row in data %}
-
-<tr>
-
-<td>{{ row["University Roll Number"] }}</td>
-
-<td>{{ row["Student Name"] }}</td>
-
-<td>{{ row["Assignment Marks"] }}</td>
-
-<td>{{ row.get("Internal_Final","-") }}</td>
-
-<td>{{ row["NPTEL External Marks"] }}</td>
-
-<td>{{ row.get("External_Final","-") }}</td>
-
-<td>{{ row.get("Total","-") }}</td>
-
-<td>{{ row.get("Result","-") }}</td>
-
-<td>{{ row.get("Track","-") }}</td>
-
-</tr>
-
-{% endfor %}
-
-</table>
-
-{% else %}
-
-<p>No data available.</p>
-
-{% endif %}
-
-
-
-<!-- College Section -->
-
-{% if college_list|length > 0 %}
-
-<br><br>
-
-<h3>College Exam Students</h3>
-
-<table class="styled-table">
-
-<tr>
-<th>Roll</th>
-<th>Name</th>
-<th>Status</th>
-</tr>
-
-{% for row in college_list %}
-
-<tr>
-
-<td>{{ row["University Roll Number"] }}</td>
-
-<td>{{ row["Student Name"] }}</td>
-
-<td>{{ row["Result"] }}</td>
-
-</tr>
-
-{% endfor %}
-
-</table>
-
-{% endif %}
-
-
-
-<br>
-
-<div style="
-display:flex;
-gap:20px;
-align-items:center;
-margin-top:20px;
-flex-wrap:wrap;
-">
-
-{% if session.get("role") == "TEACHER"
-      and stage == "college_pending"
-      and not evaluation_locked %}
-
-<a href="/edit_college_marks">
-    <button class="primary-btn">
-        Update College Marks
-    </button>
-</a>
-
-{% endif %}
-
-
-
-{% if not evaluation_locked %}
-
-<button class="secondary-btn" onclick="openDownloadModal()">
-    Download College Exam List
-</button>
-
-{% endif %}
-
+<!-- Generic Confirmation Modal -->
+<div id="genericConfirmModal" class="modal">
+    <div class="modal-content">
+        <h3 id="confirmTitle">Confirm Action</h3>
+        <p id="confirmMessage">Are you sure you want to proceed?</p>
+        <div class="modal-buttons" style="display: flex; gap: 10px; justify-content: center; margin-top: 20px;">
+            <button class="primary-btn" id="confirmYes">Yes</button>
+            <button class="secondary-btn" id="confirmNo">No</button>
+        </div>
+    </div>
 </div>
 
-
-
-<!-- Modal -->
-
-<div id="downloadModal" class="modal">
-
-<div class="modal-content" style="text-align:center; width:320px;">
-
-<h3 style="margin-bottom:25px;">Select Download Format</h3>
-
-<div style="
-display:flex;
-flex-direction:column;
-gap:15px;
-margin-bottom:20px;
-">
-
-<a href="/download_college_excel" style="width:100%;">
-<button class="primary-btn" style="width:100%;">
-Download as Excel
-</button>
-</a>
-
-<a href="/download_college_pdf" style="width:100%;">
-<button class="primary-btn" style="width:100%;">
-Download as PDF
-</button>
-</a>
-
-<a href="/download_attendance_sheet" style="width:100%;">
-<button class="primary-btn" style="width:100%;">
-Download Attendance Sheet
-</button>
-</a>
-
-</div>
-
-<button class="secondary-btn"
-        style="width:100%;"
-        onclick="closeDownloadModal()">
-Cancel
-</button>
-
-</div>
-
-</div>
-
-
+<style>
+.page-title {
+    font-size: 24px;
+    font-weight: 600;
+    color: #0f172a;
+}
+.styled-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 20px 0;
+    font-size: 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    border-radius: 8px;
+    overflow: hidden;
+}
+.styled-table th {
+    background: #f8fafc;
+    color: #1e293b;
+    font-weight: 600;
+    padding: 14px 12px;
+    text-align: left;
+    border-bottom: 2px solid #2563eb;
+}
+.styled-table td {
+    padding: 14px 12px;
+    border-bottom: 1px solid #e2e8f0;
+    background-color: white;
+}
+.styled-table tbody tr:hover td {
+    background-color: #f8fafc;
+}
+.primary-btn, .secondary-btn, .danger-btn {
+    margin: 2px;
+    padding: 10px 20px;
+    font-size: 15px;
+    font-weight: 500;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.primary-btn {
+    background-color: #2563eb;
+    color: white;
+}
+.primary-btn:hover {
+    background-color: #1d4ed8;
+}
+.primary-btn:disabled {
+    background-color: #bdc3c7;
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+.secondary-btn {
+    background-color: #e5e7eb;
+    color: #475569;
+}
+.secondary-btn:hover {
+    background-color: #d1d5db;
+}
+.danger-btn {
+    background-color: #dc2626;
+    color: white;
+}
+.danger-btn:hover {
+    background-color: #b91c1c;
+}
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    align-items: center;
+    justify-content: center;
+}
+.modal-content {
+    background-color: white;
+    padding: 30px;
+    border-radius: 12px;
+    width: 90%;
+    max-width: 400px;
+    text-align: center;
+}
+</style>
 
 <script>
+// Generic confirmation function
+let confirmCallback = null;
 
+function confirmAction(message, callback) {
+    confirmCallback = callback;
+    document.getElementById('confirmMessage').textContent = message;
+    document.getElementById('genericConfirmModal').style.display = 'flex';
+}
+
+function hideConfirmModal() {
+    document.getElementById('genericConfirmModal').style.display = 'none';
+    confirmCallback = null;
+}
+
+// Download Modal functions
 function openDownloadModal() {
-document.getElementById("downloadModal").style.display = "flex";
+    document.getElementById("downloadModal").style.display = "flex";
 }
 
 function closeDownloadModal() {
-document.getElementById("downloadModal").style.display = "none";
+    document.getElementById("downloadModal").style.display = "none";
 }
 
+// Modal click handlers
+window.onclick = function(event) {
+    const downloadModal = document.getElementById("downloadModal");
+    const confirmModal = document.getElementById("genericConfirmModal");
+    
+    if (event.target == downloadModal) {
+        downloadModal.style.display = "none";
+    }
+    if (event.target == confirmModal) {
+        hideConfirmModal();
+    }
+};
+
+// Prevent back navigation
+window.history.pushState(null, null, window.location.href);
+window.onpopstate = function () {
+    window.history.go(1);
+};
+
+// Initialize modal buttons when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    // Set up confirmation modal buttons
+    const confirmYes = document.getElementById('confirmYes');
+    const confirmNo = document.getElementById('confirmNo');
+    
+    if (confirmYes) {
+        confirmYes.onclick = function() {
+            if (confirmCallback) {
+                confirmCallback();
+            }
+            hideConfirmModal();
+        };
+    }
+    
+    if (confirmNo) {
+        confirmNo.onclick = hideConfirmModal;
+    }
+});
 </script>
-
-
-
-
-</div>
-
 {% endblock %}

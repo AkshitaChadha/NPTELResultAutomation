@@ -1,119 +1,226 @@
 {% extends "base.html" %}
 
 {% block nav_items %}
-
 {% if session.role == "HOD" %}
 <a href="/hod_dashboard">Dashboard</a>
 {% elif session.role == "TEACHER" %}
 <a href="/teacher_dashboard">Dashboard</a>
 {% endif %}
-
 {% endblock %}
-
 
 {% block nav_right %}
-
 <a href="/logout">Logout</a>
-
 {% endblock %}
 
-
-
 {% block content %}
-
-<style>
-.faded {
-    background-color: #f2f2f2;
-    opacity: 0.6;
-    pointer-events: none;
-}
-</style>
-
-
 <div class="container">
+    <h2 class="page-title">Edit Unlocked Students</h2>
+    
+    <form method="POST" id="editForm">
+        <table class="styled-table">
+            <thead>
+                <tr>
+                    <th>Roll</th>
+                    <th>Name</th>
+                    <th>Registered</th>
+                    <th>Assignment (0-25)</th>
+                    <th>NPTEL External (0-75)</th>
+                    <th>College External (0-60 or type ABSENT)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for student in data %}
+                <tr>
+                    <td>{{ student['University Roll Number'] }}</td>
+                    <td>{{ student['Student Name'] }}</td>
 
-<h2 class="page-title">Edit Unlocked Students</h2>
+                    <td>
+                        <select name="registered_{{ student['University Roll Number'] }}" 
+                                class="status-select" 
+                                onchange="handleStatusChange(this, '{{ student['University Roll Number'] }}')">
+                            <option value="Registered" {% if student.get('Registered') == 'Registered' %}selected{% endif %}>Registered</option>
+                            <option value="Enrolled" {% if student.get('Registered') == 'Enrolled' %}selected{% endif %}>Enrolled</option>
+                            <option value="Not Enrolled" {% if student.get('Registered') == 'Not Enrolled' %}selected{% endif %}>Not Enrolled</option>
+                        </select>
+                    </td>
 
-<form method="POST">
+                    <td>
+                        <input type="number"
+                               name="assignment_{{ student['University Roll Number'] }}"
+                               id="assignment_{{ student['University Roll Number'] }}"
+                               value="{{ student.get('Assignment Marks', '') }}"
+                               min="0"
+                               max="25"
+                               step="0.01"
+                               class="assignment-input"
+                               {% if student.get('Registered') == 'Not Enrolled' %}disabled{% endif %}>
+                    </td>
 
-<table class="styled-table">
+                    <!-- NPTEL External -->
+                    <td>
+                        <input type="number"
+                               name="nptel_{{ student['University Roll Number'] }}"
+                               id="nptel_{{ student['University Roll Number'] }}"
+                               value="{% if student.get('NPTEL External Marks') not in ['NA', None, ''] %}{{ student.get('NPTEL External Marks') }}{% endif %}"
+                               min="0"
+                               max="75"
+                               step="0.01"
+                               class="assignment-input"
 
-<tr>
-<th>Roll</th>
-<th>Name</th>
-<th>Registered</th>
-<th>Assignment</th>
-<th>NPTEL External</th>
-<th>College External</th>
-</tr>
+                               {% if student.get('Registered') != 'Registered'
+                                  or student.get('College_External_Raw') not in ['', None, 'NA'] %}
+                               disabled
+                               {% endif %}>
+                    </td>
 
+                    <!-- College External -->
+                    <td>
+                        <input type="text"
+                               name="college_{{ student['University Roll Number'] }}"
+                               id="college_{{ student['University Roll Number'] }}"
+                               value="{% if student.get('College_External_Raw') == 'ABSENT' %}ABSENT{% else %}{{ student.get('College_External_Raw','') }}{% endif %}"
+                               class="assignment-input college-input"
 
-{% for student in data %}
-<tr>
+                               {% if student.get('College_External_Raw') in ['', None, 'NA'] %}
+                               disabled
+                               {% endif %}
 
-<td>{{ student['University Roll Number'] }}</td>
+                               {% if student.get('College_External_Raw') == 'ABSENT' %}
+                               style="background-color:#f8d7da;color:#721c24;font-weight:500;"
+                               {% endif %}>
+                    </td>
 
-<td>{{ student['Student Name'] }}</td>
-
-<td>
-<select name="registered_{{ student['University Roll Number'] }}">
-<option value="Registered"
-{% if student.get('Registered') == "Registered" %}selected{% endif %}>
-Registered
-</option>
-
-<option value="Not Registered"
-{% if student.get('Registered') == "Not Registered" %}selected{% endif %}>
-Not Registered
-</option>
-</select>
-</td>
-
-
-<td>
-<input type="number"
-name="assignment_{{ student['University Roll Number'] }}"
-value="{{ student.get('Assignment Marks', '') }}"
-min="0"
-max="25"
-step="0.5">
-</td>
-
-
-<td>
-<input type="number"
-name="nptel_{{ student['University Roll Number'] }}"
-value="{{ student.get('NPTEL External Marks', '') }}"
-min="0"
-max="75"
-step="1">
-</td>
-
-
-<td>
-<input type="number"
-name="college_{{ student['University Roll Number'] }}"
-value="{{ student.get('College_External_Raw', '') }}"
-min="0"
-max="100"
-step="1"
-class="{% if student.get('Track') == 'NPTEL' %}faded{% endif %}"
-{% if student.get('Track') == 'NPTEL' %}readonly{% endif %}>
-</td>
-
-</tr>
-{% endfor %}
-
-</table>
-
-<br>
-
-<button type="submit" class="primary-btn">
-Save Changes & Re-evaluate
-</button>
-
-</form>
-
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        
+        <div style="margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end;">
+            <button type="button" class="primary-btn" onclick="showConfirmModal()">Save Changes</button>
+            <a href="{{ url_for('evaluate', subject_id=subject_id) }}">
+                <button type="button" class="secondary-btn">Cancel</button>
+            </a>
+        </div>
+    </form>
 </div>
+
+<!-- Confirmation Modal -->
+<div id="confirmModal" class="modal">
+    <div class="modal-content">
+        <h3>Confirm Changes</h3>
+        <p>Are you sure you want to save these changes? This will re-lock the marks.</p>
+        <div class="modal-buttons">
+            <button class="btn-confirm" onclick="submitForm()">Save</button>
+            <button class="btn-cancel" onclick="closeConfirmModal()">Cancel</button>
+        </div>
+    </div>
+</div>
+
+
+<script>
+
+// Handle registration status change
+function handleStatusChange(select, roll) {
+
+    const status = select.value;
+
+    const assignmentInput = document.getElementById(`assignment_${roll}`);
+    const nptelInput = document.getElementById(`nptel_${roll}`);
+    const collegeInput = document.getElementById(`college_${roll}`);
+
+    if (status === 'Not Enrolled') {
+
+        assignmentInput.value = '0';
+        assignmentInput.disabled = true;
+
+        nptelInput.value = '';
+        nptelInput.disabled = true;
+
+        collegeInput.disabled = false;
+
+    } 
+    else if (status === 'Enrolled') {
+
+        assignmentInput.disabled = false;
+
+        nptelInput.value = '';
+        nptelInput.disabled = true;
+
+        collegeInput.disabled = false;
+
+    } 
+    else if (status === 'Registered') {
+
+        assignmentInput.disabled = false;
+
+        if (collegeInput.value === "" || collegeInput.value === "NA") {
+            nptelInput.disabled = false;
+        }
+
+        collegeInput.disabled = false;
+    }
+}
+
+
+// College ABSENT styling
+document.querySelectorAll('.college-input').forEach(input => {
+
+    input.addEventListener('input', function() {
+
+        const value = this.value.toUpperCase();
+
+        if (value === 'ABSENT') {
+
+            this.style.backgroundColor = '#f8d7da';
+            this.style.color = '#721c24';
+            this.style.fontWeight = '500';
+
+        } else {
+
+            this.style.backgroundColor = '';
+            this.style.color = '';
+            this.style.fontWeight = '';
+
+        }
+
+    });
+
+});
+
+
+// Prevent back navigation
+window.history.pushState(null, null, window.location.href);
+
+window.onpopstate = function () {
+    window.history.go(1);
+};
+
+
+// Modal functions
+function showConfirmModal() {
+    document.getElementById('confirmModal').style.display = 'flex';
+}
+
+function closeConfirmModal() {
+    document.getElementById('confirmModal').style.display = 'none';
+}
+
+function submitForm() {
+    document.getElementById('editForm').submit();
+}
+
+
+// Close modal when clicking outside
+window.onclick = function(event) {
+
+    const modal = document.getElementById('confirmModal');
+
+    if (event.target == modal) {
+        modal.style.display = 'none';
+    }
+
+}
+
+</script>
 
 {% endblock %}

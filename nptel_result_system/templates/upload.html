@@ -1,206 +1,154 @@
 {% extends "base.html" %}
 
 {% block nav_items %}
-
 {% if session.role == "HOD" %}
 <a href="/hod_dashboard">Dashboard</a>
 {% elif session.role == "TEACHER" %}
 <a href="/teacher_dashboard">Dashboard</a>
 {% endif %}
-
 {% endblock %}
-
 
 {% block nav_right %}
-
 <a href="/logout">Logout</a>
-
 {% endblock %}
 
-
-
 {% block content %}
-
 <div class="container">
 
 {% if subject %}
-
-<div class="subject-box">
-
-
+<!-- Subject Details Card - Enhanced with Blue Theme -->
 <div style="
-display:grid;
-grid-template-columns:1fr 1fr;
-gap:0px;
+    background: linear-gradient(135deg, #f0f9ff 0%, #e6f0fa 100%);
+    padding: 20px 25px;
+    border-radius: 10px;
+    margin-bottom: 30px;
+    border: 1px solid #bfdbfe;
+    box-shadow: 0 2px 8px rgba(37, 99, 235, 0.08);
 ">
-
-<p><strong>Branch:</strong> {{ subject["branch"] }}</p>
-
-<p><strong>Subject Code:</strong> {{ subject["subject_code"] }}</p>
-
-<p><strong>Class:</strong> Semester {{ subject["semester"] }} - Section {{ subject["section"] }}</p>
-
-<p><strong>Subject:</strong> {{ subject["subject_name"] }}</p>
-
+    <div style="
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 20px;
+    ">
+        <div style="background: white; padding: 12px 15px; border-radius: 8px;">
+            <span style="font-size: 12px; color: #64748b; display: block; margin-bottom: 4px;">Branch</span>
+            <span style="font-size: 16px; font-weight: 600; color: #1e40af;">{{ subject["branch"] }}</span>
+        </div>
+        <div style="background: white; padding: 12px 15px; border-radius: 8px;">
+            <span style="font-size: 12px; color: #64748b; display: block; margin-bottom: 4px;">Subject Code</span>
+            <span style="font-size: 16px; font-weight: 600; color: #1e40af;">{{ subject["subject_code"] }}</span>
+        </div>
+        <div style="background: white; padding: 12px 15px; border-radius: 8px;">
+            <span style="font-size: 12px; color: #64748b; display: block; margin-bottom: 4px;">Class</span>
+            <span style="font-size: 16px; font-weight: 600; color: #1e40af;">Semester {{ subject["semester"] }} - Section {{ subject["section"] }}</span>
+        </div>
+        <div style="background: white; padding: 12px 15px; border-radius: 8px;">
+            <span style="font-size: 12px; color: #64748b; display: block; margin-bottom: 4px;">Subject</span>
+            <span style="font-size: 16px; font-weight: 600; color: #1e40af;">{{ subject["subject_name"] }}</span>
+        </div>
+    </div>
 </div>
-
-</div>
-
-<br>
-
 {% endif %}
 
-
-
+<!-- Main Content - Two Equal Cards -->
 <div style="
 display:flex;
-gap:50px;
+gap:30px;
 align-items:stretch;
 flex-wrap:wrap;
-margin-top:20px;
+margin-bottom:30px;
 ">
 
-<!-- ================= UPLOAD CARD ================= -->
-
+<!-- Upload Card -->
 <div style="
 flex:1;
-min-width:380px;
+min-width:400px;
 background:#ffffff;
-padding:28px;
-border-radius:12px;
-border:1px solid #e5e7eb;
-box-shadow:0 6px 18px rgba(0,0,0,0.05);
+padding:30px;
+border-radius:10px;
+border:1px solid #bfdbfe;
+box-shadow: 0 4px 12px rgba(37, 99, 235, 0.08);
 ">
+    <h2 style="margin:0 0 20px 0; font-size:22px; font-weight:600; color:#1e40af; padding-left: 0;">
+        {% if upload_type == "full" %}
+            Upload Complete Student Data
+        {% else %}
+            Upload Basic Student Details
+        {% endif %}
+    </h2>
 
-<h2 class="page-title">Upload Student Excel Sheet</h2>
-
-<p style="color:#6b7280; margin-bottom:15px;">
-Upload the Excel sheet containing student details.
-</p>
-
-<form action="/upload"
-      method="POST"
-      enctype="multipart/form-data"
-      class="form-box">
-
-<div class="form-group">
-
-<input type="file"
-       name="file"
-       id="excelFile"
-       required
-       style="
-padding:8px;
-border:1px solid #d1d5db;
-border-radius:6px;
-background:white;
-width:100%;
-">
-
+    <form action="/upload/{{ upload_type }}" method="POST" enctype="multipart/form-data">
+        <div style="margin-bottom:20px;">
+            <label style="display: block; margin-bottom: 8px; font-size: 14px; color: #475569; font-weight: 500;">Select Excel File</label>
+            <input type="file" name="file" id="excelFile" required 
+                   style="width:100%; padding:12px; border:2px solid #e2e8f0; border-radius:8px; background:white; font-size:14px; transition: border 0.2s;"
+                   onfocus="this.style.borderColor='#3b82f6'"
+                   onblur="this.style.borderColor='#e2e8f0'">
+        </div>
+        <button class="primary-btn" id="uploadBtn" disabled style="width:100%; padding:14px; font-size:15px; font-weight:500; border-radius:8px;">
+            Upload & Preview
+        </button>
+    </form>
 </div>
 
-<button class="primary-btn"
-        id="uploadBtn"
-        disabled
-        style="margin-top:10px;">
-
-Upload & Preview
-
-</button>
-
-</form>
-
-</div>
-
-
-
-<!-- ================= EXCEL FORMAT PREVIEW ================= -->
-
+<!-- Quick Format Reminder - Only Column Names -->
 <div style="
 flex:1;
-min-width:420px;
-background:#ffffff;
-padding:28px;
-border-radius:12px;
-border:1px solid #e5e7eb;
-box-shadow:0 6px 18px rgba(0,0,0,0.05);
+min-width:400px;
+background:#f8fafc;
+padding:30px;
+border-radius:10px;
+border:1px solid #bfdbfe;
+box-shadow: 0 4px 12px rgba(37, 99, 235, 0.08);
 ">
-
-<h3 style="margin-top:0;">Excel Format Example</h3>
-
-<p style="
-color:#6b7280;
-font-size:15px;
-margin-bottom:16px;
-">
-
-Your Excel sheet should follow this format.
-
-</p>
-
-
-<table style="
-width:100%;
-border-collapse:collapse;
-font-size:16px;
-box-shadow:0 4px 12px rgba(0,0,0,0.08);
-border-radius:8px;
-overflow:hidden;
-">
-
-<tr style="background:#e5e7eb;">
-<th style="border:1px solid #ccc; padding:12px 18px;">SNo</th>
-<th style="border:1px solid #ccc; padding:12px 18px;">University Roll Number</th>
-<th style="border:1px solid #ccc; padding:12px 18px;">Student Name</th>
-
-</tr>
-
-<tr>
-<td style="border:1px solid #ccc; padding:12px 18px;">1</td>
-<td style="border:1px solid #ccc; padding:12px 18px;">2101012345</td>
-<td style="border:1px solid #ccc; padding:12px 18px;">Aman Sharma</td>
-
-</tr>
-
-<tr>
-<td style="border:1px solid #ccc; padding:12px 18px;">2</td>
-<td style="border:1px solid #ccc; padding:12px 18px;">2101012346</td>
-<td style="border:1px solid #ccc; padding:12px 18px;">Priya Singh</td>
-
-</tr>
-
-<tr>
-<td style="border:1px solid #ccc; padding:12px 18px;">3</td>
-<td style="border:1px solid #ccc; padding:12px 18px;">2101012347</td>
-<td style="border:1px solid #ccc; padding:12px 18px;">Rahul Verma</td>
-
-</tr>
-
-</table>
-
+    <h2 style="margin:0 0 20px 0; font-size:22px; font-weight:600; color:#1e40af; padding-left: 0;">
+        Required Columns
+    </h2>
+    
+    <div style="background: white; padding: 20px; border-radius: 8px; border: 1px solid #dbeafe;">
+        {% if upload_type == "full" %}
+            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px;">
+                <div>
+                    <div style="font-family: 'Courier New', monospace; background: #eef2ff; padding: 10px 12px; border-radius: 6px; margin-bottom: 8px; font-size:13px; color: #1e40af; border: 1px solid #bfdbfe;">sno</div>
+                    <div style="font-family: 'Courier New', monospace; background: #eef2ff; padding: 10px 12px; border-radius: 6px; margin-bottom: 8px; font-size:13px; color: #1e40af; border: 1px solid #bfdbfe;">university roll number</div>
+                    <div style="font-family: 'Courier New', monospace; background: #eef2ff; padding: 10px 12px; border-radius: 6px; margin-bottom: 8px; font-size:13px; color: #1e40af; border: 1px solid #bfdbfe;">student name</div>
+                    <div style="font-family: 'Courier New', monospace; background: #eef2ff; padding: 10px 12px; border-radius: 6px; font-size:13px; color: #1e40af; border: 1px solid #bfdbfe;">father's name</div>
+                </div>
+                <div>
+                    <div style="font-family: 'Courier New', monospace; background: #eef2ff; padding: 10px 12px; border-radius: 6px; margin-bottom: 8px; font-size:13px; color: #1e40af; border: 1px solid #bfdbfe;">registration status</div>
+                    <div style="font-family: 'Courier New', monospace; background: #eef2ff; padding: 10px 12px; border-radius: 6px; margin-bottom: 8px; font-size:13px; color: #1e40af; border: 1px solid #bfdbfe;">assignment marks</div>
+                    <div style="font-family: 'Courier New', monospace; background: #eef2ff; padding: 10px 12px; border-radius: 6px; font-size:13px; color: #1e40af; border: 1px solid #bfdbfe;">external marks</div>
+                </div>
+            </div>
+        {% else %}
+            <div>
+                <div style="font-family: 'Courier New', monospace; background: #eef2ff; padding: 10px 12px; border-radius: 6px; margin-bottom: 8px; font-size:13px; color: #1e40af; border: 1px solid #bfdbfe;">sno</div>
+                <div style="font-family: 'Courier New', monospace; background: #eef2ff; padding: 10px 12px; border-radius: 6px; margin-bottom: 8px; font-size:13px; color: #1e40af; border: 1px solid #bfdbfe;">university roll number</div>
+                <div style="font-family: 'Courier New', monospace; background: #eef2ff; padding: 10px 12px; border-radius: 6px; font-size:13px; color: #1e40af; border: 1px solid #bfdbfe;">student name</div>
+            </div>
+        {% endif %}
+    </div>
 </div>
 
 </div>
 
+<!-- Back to Upload Options Button -->
+<div style="text-align: center; margin-top: 20px; padding-top: 20px; border-top: 2px solid #dbeafe;">
+    <a href="/instructions?subject_id={{ session.get('active_subject') }}">
+        <button class="secondary-btn" style="padding: 12px 35px; font-size: 14px; border-radius: 8px;">
+            ← Back to Upload Options
+        </button>
+    </a>
 </div>
 
-
+</div>
 
 <script>
-
-const fileInput = document.getElementById("excelFile");
-const uploadBtn = document.getElementById("uploadBtn");
-
-fileInput.addEventListener("change", function(){
-
-if(this.files.length > 0){
-uploadBtn.disabled = false;
-}else{
-uploadBtn.disabled = true;
-}
-
+document.getElementById("excelFile")?.addEventListener("change", function(){
+    document.getElementById("uploadBtn").disabled = this.files.length === 0;
 });
-
 </script>
+
+
 
 {% endblock %}

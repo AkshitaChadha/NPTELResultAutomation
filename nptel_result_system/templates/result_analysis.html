@@ -1,0 +1,769 @@
+{% extends "base.html" %}
+
+{% block nav_items %}
+<a href="{{ url_for('hod_dashboard') }}">Dashboard</a>
+<a href="{{ url_for('manage_branches') }}">Branches</a>
+<a href="{{ url_for('manage_subjects') }}">Subjects</a>
+<a href="{{ url_for('manage_teachers') }}">Teachers</a>
+<a href="{{ url_for('subject_overview') }}">Result</a>
+<a href="{{ url_for('result_analysis') }}" class="active">Analysis</a>
+{% endblock %}
+
+{% block nav_right %}
+<a href="{{ url_for('logout') }}">Logout</a>
+{% endblock %}
+
+{% block content %}
+
+<div class="analysis-layout">
+    <!-- Left Column: Selection Panel -->
+    <div class="selection-panel">
+        <h3>Result Analysis</h3>
+        
+        <div class="selection-form">
+            <!-- Branch Selection -->
+            <div class="form-group">
+                <label>Branch <span class="required">*</span></label>
+                <select name="branch" id="branch" required onchange="loadSemesters()">
+                    <option value="">Select Branch</option>
+                    {% for branch in branches %}
+                        <option value="{{ branch.name }}">{{ branch.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- Semester Selection -->
+            <div class="form-group">
+                <label>Semester <span class="required">*</span></label>
+                <select name="semester" id="semester" required onchange="loadSubjects()" disabled>
+                    <option value="">Select Branch First</option>
+                </select>
+            </div>
+
+            <!-- Subject Dropdown -->
+            <div class="form-group">
+                <label>Subject <span class="required">*</span></label>
+                <select name="subject_id" id="subject" required onchange="loadAnalysis()" disabled>
+                    <option value="">Select Subject</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Column: Analysis Results -->
+    <div class="analysis-panel">
+        <div class="analysis-header">
+            <div class="section-tabs-container" id="sectionTabsContainer" style="display: none;">
+                <div class="section-tabs" id="sectionTabs"></div>
+                <div class="chart-toggle" id="chartToggle">
+                    <button class="toggle-btn active" onclick="toggleChart('pie')" id="pieToggle">🥧</button>
+                    <button class="toggle-btn" onclick="toggleChart('bar')" id="barToggle">📊</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="noSelectionMessage" class="no-selection">
+            <div class="message-icon">📊</div>
+            <h3>Select Branch, Semester & Subject</h3>
+            <p>Choose options from the left panel to view result analysis</p>
+        </div>
+
+        <div id="notStartedMessage" class="status-message-card" style="display: none;">
+            <div class="message-icon">⏸️</div>
+            <h3>Evaluation Not Started</h3>
+            <p>No evaluation data available for this subject</p>
+        </div>
+
+        <div id="inProgressMessage" class="status-message-card" style="display: none;">
+            <div class="message-icon">⏳</div>
+            <h3>Evaluation in Progress</h3>
+            <p>Results will be available once the evaluation is completed</p>
+        </div>
+
+        <div id="analysisContent" style="display: none;">
+            <!-- Overall Stats Cards - Only Pass/Fail -->
+            <div class="stats-grid" id="overallStats"></div>
+
+            <!-- Charts Container -->
+            <div class="charts-container">
+                <div class="chart-card">
+                    <h4>Result Distribution</h4>
+                    <canvas id="resultChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Top Performers Section -->
+            <div class="top-performers">
+                <h4>🏆 Top Performers</h4>
+                <div class="performers-grid" id="topPerformers"></div>
+            </div>
+        </div>
+
+        <div id="noDataMessage" class="status-message-card" style="display: none;">
+            <div class="message-icon">📭</div>
+            <h3>No Data Available</h3>
+            <p>No results found for this section</p>
+        </div>
+    </div>
+</div>
+
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+.analysis-layout {
+    display: grid;
+    grid-template-columns: 350px 1fr;
+    gap: 25px;
+    max-width: 1600px;
+    margin: 20px auto;
+    padding: 0 20px;
+}
+
+/* Selection Panel */
+.selection-panel {
+    background: white;
+    border-radius: 12px;
+    padding: 25px;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.08);
+    height: fit-content;
+    position: sticky;
+    top: 20px;
+}
+
+.selection-panel h3 {
+    margin: 0 0 20px 0;
+    color: #1e40af;
+    font-size: 20px;
+    font-weight: 600;
+    padding-bottom: 10px;
+    border-bottom: 2px solid #e2e8f0;
+}
+
+.selection-form {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.form-group {
+    display: flex;
+    flex-direction: column;
+}
+
+.form-group label {
+    font-weight: 500;
+    color: #334155;
+    margin-bottom: 6px;
+    font-size: 14px;
+}
+
+.required {
+    color: #dc2626;
+    margin-left: 4px;
+}
+
+.form-group select {
+    padding: 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    font-size: 14px;
+    transition: all 0.2s;
+}
+
+.form-group select:focus {
+    outline: none;
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+/* Analysis Panel */
+.analysis-panel {
+    background: white;
+    border-radius: 12px;
+    padding: 25px;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.08);
+    min-height: 500px;
+}
+
+.analysis-header {
+    margin-bottom: 20px;
+}
+
+.section-tabs-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 15px;
+}
+
+.section-tabs {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    flex: 1;
+}
+
+.section-tab {
+    padding: 8px 16px;
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    border-radius: 20px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s;
+}
+
+.section-tab:hover {
+    background: #e0f2fe;
+    border-color: #2563eb;
+}
+
+.section-tab.active {
+    background: #2563eb;
+    color: white;
+    border-color: #2563eb;
+}
+
+.chart-toggle {
+    display: flex;
+    gap: 8px;
+    background: #f1f5f9;
+    padding: 4px;
+    border-radius: 30px;
+    flex-shrink: 0;
+}
+
+.toggle-btn {
+    width: 40px;
+    height: 40px;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    font-size: 20px;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.toggle-btn:hover {
+    background: #e2e8f0;
+}
+
+.toggle-btn.active {
+    background: #2563eb;
+    color: white;
+}
+
+/* Status Message Cards */
+.status-message-card {
+    text-align: center;
+    padding: 60px 20px;
+    color: #94a3b8;
+}
+
+.status-message-card .message-icon {
+    font-size: 64px;
+    margin-bottom: 20px;
+    opacity: 0.5;
+}
+
+.status-message-card h3 {
+    margin: 0 0 10px 0;
+    color: #1e293b;
+    font-size: 20px;
+}
+
+.status-message-card p {
+    margin: 0;
+    font-size: 15px;
+}
+
+/* No selection message */
+.no-selection {
+    text-align: center;
+    padding: 80px 20px;
+    color: #94a3b8;
+}
+
+.no-selection .message-icon {
+    font-size: 64px;
+    margin-bottom: 20px;
+    opacity: 0.5;
+}
+
+.no-selection h3 {
+    margin: 0 0 10px 0;
+    color: #1e293b;
+    font-size: 20px;
+}
+
+.no-selection p {
+    margin: 0;
+    font-size: 15px;
+}
+
+/* Stats Grid - 3 columns instead of 4 */
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 15px;
+    margin-bottom: 25px;
+}
+
+.stat-card {
+    background: #f8fafc;
+    padding: 20px;
+    border-radius: 10px;
+    text-align: center;
+    border: 1px solid #e2e8f0;
+}
+
+.stat-card .stat-title {
+    color: #64748b;
+    font-size: 13px;
+    margin-bottom: 8px;
+}
+
+.stat-card .stat-number {
+    font-size: 32px;
+    font-weight: 700;
+    color: #1e40af;
+}
+
+.stat-card .stat-subtitle {
+    color: #94a3b8;
+    font-size: 12px;
+    margin-top: 5px;
+}
+
+/* Charts Container */
+.charts-container {
+    margin-bottom: 30px;
+}
+
+.chart-card {
+    background: #f8fafc;
+    padding: 20px;
+    border-radius: 10px;
+    border: 1px solid #e2e8f0;
+}
+
+.chart-card h4 {
+    margin: 0 0 15px 0;
+    color: #1e293b;
+    font-size: 16px;
+    font-weight: 600;
+    text-align: center;
+}
+
+.chart-card canvas {
+    max-height: 300px;
+    max-width: 100%;
+}
+
+/* Top Performers */
+.top-performers {
+    margin-top: 30px;
+}
+
+.top-performers h4 {
+    margin: 0 0 15px 0;
+    color: #1e293b;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.performers-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+}
+
+.performer-card {
+    background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+    padding: 20px;
+    border-radius: 10px;
+    border: 1px solid #e2e8f0;
+    text-align: center;
+    position: relative;
+}
+
+.performer-card .rank {
+    position: absolute;
+    top: -10px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #2563eb;
+    color: white;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 14px;
+    border: 2px solid white;
+}
+
+.performer-card .rank.gold { background: #fbbf24; color: #92400e; }
+.performer-card .rank.silver { background: #94a3b8; color: #1e293b; }
+.performer-card .rank.bronze { background: #b45309; color: white; }
+
+.performer-card .student-name {
+    margin-top: 15px;
+    font-weight: 600;
+    color: #0f172a;
+    font-size: 16px;
+}
+
+.performer-card .student-roll {
+    color: #64748b;
+    font-size: 13px;
+    margin: 5px 0;
+}
+
+.performer-card .student-score {
+    font-size: 24px;
+    font-weight: 700;
+    color: #2563eb;
+    margin: 10px 0;
+}
+
+.performer-card .student-section {
+    display: inline-block;
+    background: #e0f2fe;
+    color: #0369a1;
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+}
+
+/* Responsive */
+@media (max-width: 1200px) {
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .performers-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 1024px) {
+    .analysis-layout {
+        grid-template-columns: 1fr;
+    }
+    
+    .selection-panel {
+        position: static;
+    }
+    
+    .section-tabs-container {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}
+</style>
+
+<script>
+let resultChart = null;
+let currentData = null;
+let currentChartType = 'pie';
+let currentSection = 'all';
+
+function loadSemesters() {
+    const branch = document.getElementById('branch').value;
+    const semesterSelect = document.getElementById('semester');
+    const subjectSelect = document.getElementById('subject');
+    
+    semesterSelect.innerHTML = '<option value="">Select Semester</option>';
+    subjectSelect.innerHTML = '<option value="">Select Subject</option>';
+    subjectSelect.disabled = true;
+    
+    resetView();
+    
+    if (!branch) {
+        semesterSelect.disabled = true;
+        return;
+    }
+    
+    fetch(`/get_branch_semesters?branch=${branch}`)
+        .then(res => res.json())
+        .then(data => {
+            semesterSelect.disabled = false;
+            if (data.length === 0) {
+                semesterSelect.innerHTML = '<option value="">No semesters available</option>';
+                return;
+            }
+            data.forEach(sem => {
+                const option = document.createElement('option');
+                option.value = sem;
+                option.textContent = `Semester ${sem}`;
+                semesterSelect.appendChild(option);
+            });
+        });
+}
+
+function loadSubjects() {
+    const branch = document.getElementById('branch').value;
+    const semester = document.getElementById('semester').value;
+    const subjectSelect = document.getElementById('subject');
+    
+    subjectSelect.innerHTML = '<option value="">Select Subject</option>';
+    
+    resetView();
+    
+    if (!branch || !semester) {
+        subjectSelect.disabled = true;
+        return;
+    }
+    
+    fetch(`/get_nptel_subjects?branch=${branch}&semester=${semester}`)
+        .then(res => res.json())
+        .then(data => {
+            subjectSelect.disabled = false;
+            if (data.length === 0) {
+                subjectSelect.innerHTML = '<option value="">No subjects available</option>';
+                return;
+            }
+            data.forEach(sub => {
+                const option = document.createElement('option');
+                option.value = sub.id;
+                option.textContent = sub.label;
+                subjectSelect.appendChild(option);
+            });
+        });
+}
+
+document.getElementById('subject').addEventListener('change', function() {
+    if (this.value) {
+        loadAnalysis();
+    } else {
+        resetView();
+    }
+});
+
+function loadAnalysis() {
+    const branch = document.getElementById('branch').value;
+    const semester = document.getElementById('semester').value;
+    const subjectId = document.getElementById('subject').value;
+    
+    if (!branch || !semester || !subjectId) {
+        return;
+    }
+    
+    fetch(`/get_result_analysis?branch=${branch}&semester=${semester}&subject_id=${subjectId}`)
+        .then(res => res.json())
+        .then(data => {
+            currentData = data;
+            displayAnalysis(data);
+        });
+}
+
+function displayAnalysis(data) {
+    // Hide all messages first
+    document.getElementById('noSelectionMessage').style.display = 'none';
+    document.getElementById('notStartedMessage').style.display = 'none';
+    document.getElementById('inProgressMessage').style.display = 'none';
+    document.getElementById('noDataMessage').style.display = 'none';
+    document.getElementById('analysisContent').style.display = 'none';
+    document.getElementById('sectionTabsContainer').style.display = 'none';
+    
+    // Check evaluation status
+    if (data.status === 'not_started') {
+        document.getElementById('notStartedMessage').style.display = 'block';
+        return;
+    }
+    
+    if (data.status === 'in_progress') {
+        document.getElementById('inProgressMessage').style.display = 'block';
+        return;
+    }
+    
+    // Show section tabs and chart toggle
+    document.getElementById('sectionTabsContainer').style.display = 'flex';
+    
+    // Create section tabs
+    const sectionTabs = document.getElementById('sectionTabs');
+    sectionTabs.innerHTML = '<button class="section-tab active" onclick="filterBySection(\'all\')">All Sections</button>';
+    
+    data.sections.forEach(section => {
+        sectionTabs.innerHTML += `<button class="section-tab" onclick="filterBySection('${section}')">Section ${section}</button>`;
+    });
+    
+    // Store section data
+    currentSection = 'all';
+    filterBySection('all');
+}
+
+function filterBySection(section) {
+    currentSection = section;
+    
+    // Update active tab
+    document.querySelectorAll('.section-tab').forEach(tab => {
+        tab.classList.remove('active');
+        if (tab.textContent.includes(section === 'all' ? 'All' : `Section ${section}`)) {
+            tab.classList.add('active');
+        }
+    });
+    
+    if (!currentData) return;
+    
+    // Check if section has data
+    const hasData = section === 'all' ? 
+        (currentData.overall_stats.total > 0) : 
+        (currentData.section_stats[section] && currentData.section_stats[section].total > 0);
+    
+    if (!hasData) {
+        document.getElementById('analysisContent').style.display = 'none';
+        document.getElementById('noDataMessage').style.display = 'block';
+        return;
+    }
+    
+    document.getElementById('analysisContent').style.display = 'block';
+    document.getElementById('noDataMessage').style.display = 'none';
+    
+    // Update stats - removed enrolled
+    const statsToShow = section === 'all' ? currentData.overall_stats : currentData.section_stats[section];
+    displayStatsCards(statsToShow);
+    
+    // Update chart
+    const chartsToShow = section === 'all' ? currentData.charts_data : currentData.section_charts[section];
+    createChart(chartsToShow);
+    
+    // Update top performers
+    const performersToShow = section === 'all' ? currentData.top_performers : currentData.section_top_performers[section];
+    displayTopPerformers(performersToShow);
+}
+
+function displayStatsCards(stats) {
+    const statsGrid = document.getElementById('overallStats');
+    statsGrid.innerHTML = `
+        <div class="stat-card">
+            <div class="stat-title">Total Students</div>
+            <div class="stat-number">${stats.total}</div>
+            <div class="stat-subtitle">Total enrolled</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-title">Passed</div>
+            <div class="stat-number">${stats.passed}</div>
+            <div class="stat-subtitle">NPTEL: ${stats.nptel_passed} | College: ${stats.college_passed}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-title">Failed</div>
+            <div class="stat-number">${stats.failed}</div>
+            <div class="stat-subtitle">${((stats.failed/stats.total)*100).toFixed(1)}%</div>
+        </div>
+    `;
+}
+
+function createChart(chartsData) {
+    if (resultChart) {
+        resultChart.destroy();
+    }
+    
+    const ctx = document.getElementById('resultChart').getContext('2d');
+    
+    if (currentChartType === 'pie') {
+        resultChart = new Chart(ctx, {
+            type: 'pie',
+            data: {
+                labels: ['Passed (NPTEL)', 'Passed (College)', 'Failed'],
+                datasets: [{
+                    data: [chartsData.nptel_passed, chartsData.college_passed, chartsData.failed],
+                    backgroundColor: ['#059669', '#2563eb', '#dc2626']
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: { position: 'bottom' }
+                }
+            }
+        });
+    } else {
+        resultChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: ['Passed (NPTEL)', 'Passed (College)', 'Failed'],
+                datasets: [{
+                    label: 'Number of Students',
+                    data: [chartsData.nptel_passed, chartsData.college_passed, chartsData.failed],
+                    backgroundColor: ['#059669', '#2563eb', '#dc2626']
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: { display: false }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: { 
+                            stepSize: 1,
+                            precision: 0
+                        }
+                    }
+                }
+            }
+        });
+    }
+}
+
+function toggleChart(type) {
+    currentChartType = type;
+    
+    // Update toggle buttons
+    document.getElementById('pieToggle').classList.toggle('active', type === 'pie');
+    document.getElementById('barToggle').classList.toggle('active', type === 'bar');
+    
+    if (currentData && currentData.status === 'completed') {
+        const chartsToShow = currentSection === 'all' ? currentData.charts_data : currentData.section_charts[currentSection];
+        createChart(chartsToShow);
+    }
+}
+
+function displayTopPerformers(performers) {
+    const container = document.getElementById('topPerformers');
+    
+    if (!performers || performers.length === 0) {
+        container.innerHTML = '<p style="text-align: center; color: #94a3b8;">No performers data available</p>';
+        return;
+    }
+    
+    let html = '';
+    performers.forEach((performer, index) => {
+        const rankClass = index === 0 ? 'gold' : index === 1 ? 'silver' : 'bronze';
+        html += `
+            <div class="performer-card">
+                <div class="rank ${rankClass}">${index + 1}</div>
+                <div class="student-name">${performer.name}</div>
+                <div class="student-roll">${performer.roll_no}</div>
+                <div class="student-score">${performer.total}</div>
+                <div class="student-section">Section ${performer.section}</div>
+            </div>
+        `;
+    });
+    
+    container.innerHTML = html;
+}
+
+function resetView() {
+    document.getElementById('noSelectionMessage').style.display = 'block';
+    document.getElementById('notStartedMessage').style.display = 'none';
+    document.getElementById('inProgressMessage').style.display = 'none';
+    document.getElementById('noDataMessage').style.display = 'none';
+    document.getElementById('analysisContent').style.display = 'none';
+    document.getElementById('sectionTabsContainer').style.display = 'none';
+}
+</script>
+
+{% endblock %}

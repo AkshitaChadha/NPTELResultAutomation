@@ -1,253 +1,489 @@
 {% extends "base.html" %}
 
 {% block nav_items %}
-
-<a href="/hod_dashboard">Dashboard</a>
-<a href="/manage_branches">Branches</a>
-<a href="/manage_subjects">Subjects</a>
-<a href="/manage_teachers">Teachers</a>
-
+<a href="{{ url_for('hod_dashboard') }}">Dashboard</a>
+<a href="{{ url_for('manage_branches') }}">Branches</a>
+<a href="{{ url_for('manage_subjects') }}">Subjects</a>
+<a href="{{ url_for('manage_teachers') }}">Teachers</a>
+<a href="{{ url_for('subject_overview') }}">Result</a>
+<a href="{{ url_for('result_analysis') }}" class="active">Analysis</a>
 {% endblock %}
-
 
 {% block nav_right %}
-
-<a href="/logout">Logout</a>
-
+<a href="{{ url_for('logout') }}">Logout</a>
 {% endblock %}
-
-
 
 {% block content %}
 
-<div class="container">
+<!-- Flash Messages -->
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        {% for category, message in messages %}
+            <div class="flash-message flash-{{ category }}" style="
+                padding: 12px 20px;
+                margin-bottom: 20px;
+                border-radius: 6px;
+                {% if category == 'success' %}
+                    background-color: #d4edda;
+                    color: #155724;
+                    border: 1px solid #c3e6cb;
+                {% elif category == 'error' %}
+                    background-color: #f8d7da;
+                    color: #721c24;
+                    border: 1px solid #f5c6cb;
+                {% else %}
+                    background-color: #fff3cd;
+                    color: #856404;
+                    border: 1px solid #ffeeba;
+                {% endif %}
+            ">
+                {{ message }}
+            </div>
+        {% endfor %}
+    {% endif %}
+{% endwith %}
 
-<h2 class="page-title">Assign Subject</h2>
+<div class="assignment-layout">
+    <!-- Left Column: Teacher Info & Current Assignments -->
+    <div class="teacher-info-card">
+        <h3>Teacher Details</h3>
+        <div class="teacher-detail">
+            <span class="detail-label">Name:</span>
+            <span class="detail-value">{{ teacher["name"] }}</span>
+        </div>
+        <div class="teacher-detail">
+            <span class="detail-label">Email:</span>
+            <span class="detail-value">{{ teacher["email"] }}</span>
+        </div>
+        
+        <div class="current-assignments">
+            {% if current_assignments %}
+                {% for branch, subjects in current_assignments.items() %}
+                    <div class="assignment-group">
+                        <div class="branch-header">{{ branch }}</div>
+                        {% for sub in subjects %}
+                            <div class="assignment-item">
+                                <span class="subject-name">{{ sub.subject_name }}</span>
+                                <span class="subject-code">{{ sub.subject_code }}</span>
+                                <span class="assignment-details">
+                                    Sem {{ sub.semester }} | Sec {{ sub.section }}
+                                </span>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% endfor %}
+            {% else %}
+                <p class="no-assignments">No subjects assigned yet</p>
+            {% endif %}
+        </div>
+    </div>
 
-<!-- ================= TEACHER INFO ================= -->
+    <!-- Right Column: Assignment Form -->
+    <div class="assignment-form-card">
+        <h3>Assign New Subject</h3>
+        
+        <form method="POST" action="{{ url_for('assign_subject', teacher_id=teacher['id']) }}" class="assign-form">
+            <!-- Branch Selection -->
+            <div class="form-group">
+                <label>Branch <span class="required">*</span></label>
+                <select name="branch" id="branch" required onchange="loadSemesters()">
+                    <option value="">Select Branch</option>
+                    {% for branch in branches %}
+                        <option value="{{ branch.name }}">{{ branch.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
 
-<div style="
-margin-bottom:25px;
-padding:12px 16px;
-background:#f9fafb;
-border-radius:8px;
-border:1px solid #e5e7eb;
-">
+            <!-- Semester Selection -->
+            <div class="form-group">
+                <label>Semester <span class="required">*</span></label>
+                <select name="semester" id="semester" required onchange="loadSubjects()" disabled>
+                    <option value="">Select Branch First</option>
+                </select>
+            </div>
 
-Teacher: <b>{{ teacher["name"] }}</b>
+            <!-- Subject Dropdown -->
+            <div class="form-group">
+                <label>Subject <span class="required">*</span></label>
+                <select name="subject_id" id="subject" required disabled>
+                    <option value="">Select Subject</option>
+                </select>
+            </div>
 
+            <!-- Section Selection with Quick Select -->
+            <div class="form-group">
+                <label>Section <span class="required">*</span></label>
+                <div class="section-options" id="sectionOptions">
+                    <p class="hint">Select branch, semester, and subject first</p>
+                </div>
+            </div>
+
+            <button type="submit" class="primary-btn submit-btn">Assign Subject</button>
+        </form>
+    </div>
 </div>
 
+<style>
+.assignment-layout {
+    display: grid;
+    grid-template-columns: 1fr 1.2fr;
+    gap: 25px;
+    max-width: 1400px;
+    margin: 20px auto;
+    padding: 0 20px;
+}
 
+/* Teacher Info Card */
+.teacher-info-card {
+    background: white;
+    border-radius: 12px;
+    padding: 25px;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+}
 
-<form method="POST" class="form-box grid-2">
+.teacher-info-card h3 {
+    margin: 0 0 20px 0;
+    color: #1e40af;
+    font-size: 18px;
+    border-bottom: 2px solid #e2e8f0;
+    padding-bottom: 10px;
+}
 
-<!-- ================= BRANCH ================= -->
+.teacher-detail {
+    margin-bottom: 10px;
+    display: flex;
+}
 
-<div class="form-group">
+.detail-label {
+    width: 80px;
+    color: #64748b;
+}
 
-<label style="margin-bottom:6px;">Branch</label>
+.detail-value {
+    color: #0f172a;
+    font-weight: 500;
+}
 
-<select name="branch"
-        id="branch"
-        required
-        onchange="loadData()"
-        style="margin-top:6px;">
+/* Current Assignments */
+.current-assignments {
+    margin-top: 20px;
+}
 
-<option value="">Select Branch</option>
+.assignment-group {
+    margin-bottom: 15px;
+}
 
-{% for branch in branches %}
-<option value="{{ branch['name'] }}">{{ branch['name'] }}</option>
-{% endfor %}
+.branch-header {
+    font-weight: 600;
+    color: #2563eb;
+    font-size: 15px;
+    margin-bottom: 8px;
+    padding-bottom: 4px;
+    border-bottom: 1px dashed #e2e8f0;
+}
 
-</select>
+.assignment-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+    font-size: 14px;
+    border-bottom: 1px solid #f1f5f9;
+}
 
-</div>
+.assignment-item:last-child {
+    border-bottom: none;
+}
 
+.subject-name {
+    font-weight: 500;
+    color: #0f172a;
+}
 
+.subject-code {
+    color: #64748b;
+    font-size: 12px;
+}
 
-<!-- ================= SEMESTER ================= -->
+.assignment-details {
+    margin-left: auto;
+    color: #475569;
+    font-size: 13px;
+    background: #f1f5f9;
+    padding: 2px 8px;
+    border-radius: 12px;
+    white-space: nowrap;
+}
 
-<div class="form-group">
+.no-assignments {
+    color: #94a3b8;
+    text-align: center;
+    padding: 20px;
+    background: #f8fafc;
+    border-radius: 8px;
+    font-style: italic;
+}
 
-<label style="margin-bottom:6px;">Semester</label>
+/* Assignment Form Card */
+.assignment-form-card {
+    background: white;
+    border-radius: 12px;
+    padding: 25px;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+}
 
-<select name="semester"
-        id="semester"
-        required
-        onchange="loadData()"
-        style="margin-top:6px;">
+.assignment-form-card h3 {
+    margin: 0 0 20px 0;
+    color: #1e40af;
+    font-size: 18px;
+    border-bottom: 2px solid #e2e8f0;
+    padding-bottom: 10px;
+}
 
-<option value="">Select Semester</option>
+.assign-form {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
 
-{% for sem in semester_options %}
-<option value="{{ sem }}">{{ sem }}</option>
-{% endfor %}
+.form-group {
+    display: flex;
+    flex-direction: column;
+}
 
-</select>
+.form-group label {
+    font-weight: 500;
+    color: #334155;
+    margin-bottom: 6px;
+    font-size: 14px;
+}
 
-</div>
+.required {
+    color: #dc2626;
+    margin-left: 4px;
+}
 
+.form-group select {
+    padding: 10px 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    font-size: 14px;
+    transition: all 0.2s;
+}
 
+.form-group select:focus {
+    outline: none;
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
 
-<!-- ================= SUBJECT ================= -->
+.section-options {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding: 10px;
+    background: #f8fafc;
+    border-radius: 8px;
+    min-height: 50px;
+}
 
-<div class="form-group">
+.section-btn {
+    padding: 8px 16px;
+    border: 1px solid #e2e8f0;
+    background: white;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s;
+}
 
-<label style="margin-bottom:6px;">Subject</label>
+.section-btn:hover {
+    border-color: #2563eb;
+    background: #eff6ff;
+}
 
-<select name="subject_id"
-        id="subject"
-        required
-        disabled
-        style="margin-top:6px;">
+.section-btn.selected {
+    background: #2563eb;
+    color: white;
+    border-color: #2563eb;
+}
 
-<option value="">Select Subject</option>
+.hint {
+    color: #94a3b8;
+    font-size: 13px;
+    font-style: italic;
+    margin: 0;
+}
 
-</select>
+.submit-btn {
+    padding: 14px;
+    font-size: 16px;
+    margin-top: 10px;
+    width: 100%;
+}
 
-</div>
+.primary-btn {
+    background-color: #2563eb;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 500;
+    transition: all 0.2s;
+}
 
+.primary-btn:hover {
+    background-color: #1d4ed8;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
+}
 
-
-<!-- ================= SECTION ================= -->
-
-<div class="form-group">
-
-<label style="margin-bottom:6px;">Section</label>
-
-<select name="section"
-        id="section"
-        required
-        disabled
-        style="margin-top:6px;">
-
-<option value="">Select Section</option>
-
-</select>
-
-</div>
-
-
-
-<!-- ================= BUTTON ================= -->
-
-<button class="green-btn full-width"
-        style="
-margin-top:20px;
-padding:12px;
-font-size:16px;
-">
-
-Assign Subject
-
-</button>
-
-</form>
-
-</div>
-
-
+/* Responsive */
+@media (max-width: 1024px) {
+    .assignment-layout {
+        grid-template-columns: 1fr;
+    }
+}
+</style>
 
 <script>
+let availableSections = [];
 
-function loadData() {
-
-const branch = document.getElementById("branch").value;
-const semester = document.getElementById("semester").value;
-
-const subjectSelect = document.getElementById("subject");
-const sectionSelect = document.getElementById("section");
-
-subjectSelect.innerHTML = '<option value="">Select Subject</option>';
-sectionSelect.innerHTML = '<option value="">Select Section</option>';
-
-subjectSelect.disabled = true;
-sectionSelect.disabled = true;
-
-if (!branch || !semester) return;
-
-
-/* ---------- LOAD NPTEL SUBJECTS ---------- */
-
-fetch(`/get_nptel_subjects?branch=${branch}&semester=${semester}`)
-.then(res => res.json())
-.then(data => {
-
-if (data.length === 0) {
-
-const opt = document.createElement("option");
-opt.textContent = "No subjects available";
-opt.disabled = true;
-subjectSelect.appendChild(opt);
-
-}
-else {
-
-data.forEach(sub => {
-
-const opt = document.createElement("option");
-opt.value = sub.id;
-opt.textContent = sub.label;
-subjectSelect.appendChild(opt);
-
-});
-
-subjectSelect.disabled = false;
+function loadSemesters() {
+    const branch = document.getElementById('branch').value;
+    const semesterSelect = document.getElementById('semester');
+    const subjectSelect = document.getElementById('subject');
+    const sectionOptions = document.getElementById('sectionOptions');
+    
+    semesterSelect.innerHTML = '<option value="">Select Semester</option>';
+    subjectSelect.innerHTML = '<option value="">Select Subject</option>';
+    subjectSelect.disabled = true;
+    sectionOptions.innerHTML = '<p class="hint">Select branch, semester, and subject first</p>';
+    
+    if (!branch) {
+        semesterSelect.disabled = true;
+        return;
+    }
+    
+    semesterSelect.disabled = false;
+    
+    // Get semester options that have subjects for this branch
+    fetch(`/get_branch_semesters?branch=${branch}`)
+        .then(res => res.json())
+        .then(data => {
+            if (data.length === 0) {
+                semesterSelect.innerHTML = '<option value="">No semesters available</option>';
+                semesterSelect.disabled = true;
+                return;
+            }
+            
+            data.forEach(sem => {
+                const option = document.createElement('option');
+                option.value = sem;
+                option.textContent = `Semester ${sem}`;
+                semesterSelect.appendChild(option);
+            });
+        })
+        .catch(error => {
+            console.error('Error loading semesters:', error);
+            semesterSelect.innerHTML = '<option value="">Error loading semesters</option>';
+        });
 }
 
-});
-
+function loadSubjects() {
+    const branch = document.getElementById('branch').value;
+    const semester = document.getElementById('semester').value;
+    const subjectSelect = document.getElementById('subject');
+    const sectionOptions = document.getElementById('sectionOptions');
+    
+    subjectSelect.innerHTML = '<option value="">Select Subject</option>';
+    sectionOptions.innerHTML = '<p class="hint">Select a subject first</p>';
+    
+    if (!branch || !semester) {
+        subjectSelect.disabled = true;
+        return;
+    }
+    
+    fetch(`/get_nptel_subjects?branch=${branch}&semester=${semester}`)
+        .then(res => res.json())
+        .then(data => {
+            subjectSelect.disabled = false;
+            if (data.length === 0) {
+                subjectSelect.innerHTML = '<option value="">No subjects available</option>';
+                return;
+            }
+            data.forEach(sub => {
+                const option = document.createElement('option');
+                option.value = sub.id;
+                option.textContent = sub.label;
+                subjectSelect.appendChild(option);
+            });
+        })
+        .catch(error => {
+            console.error('Error loading subjects:', error);
+            subjectSelect.innerHTML = '<option value="">Error loading subjects</option>';
+        });
 }
 
-
-
-/* ---------- LOAD SECTIONS AFTER SUBJECT SELECT ---------- */
-
-document.getElementById("subject").addEventListener("change", function () {
-
-const branch = document.getElementById("branch").value;
-const semester = document.getElementById("semester").value;
-const subjectId = this.value;
-
-const sectionSelect = document.getElementById("section");
-
-sectionSelect.innerHTML = '<option value="">Select Section</option>';
-sectionSelect.disabled = true;
-
-if (!subjectId) return;
-
-
-fetch(`/get_available_sections?branch=${branch}&semester=${semester}&subject_id=${subjectId}`)
-.then(res => res.json())
-.then(data => {
-
-if (data.length === 0) {
-
-const opt = document.createElement("option");
-opt.textContent = "No sections available";
-opt.disabled = true;
-sectionSelect.appendChild(opt);
-
-}
-else {
-
-data.forEach(sec => {
-
-const opt = document.createElement("option");
-opt.value = sec;
-opt.textContent = sec;
-sectionSelect.appendChild(opt);
-
+document.getElementById('subject').addEventListener('change', function() {
+    const branch = document.getElementById('branch').value;
+    const semester = document.getElementById('semester').value;
+    const subjectId = this.value;
+    const sectionOptions = document.getElementById('sectionOptions');
+    
+    if (!subjectId) {
+        sectionOptions.innerHTML = '<p class="hint">Select a subject first</p>';
+        return;
+    }
+    
+    fetch(`/get_available_sections?branch=${branch}&semester=${semester}&subject_id=${subjectId}`)
+        .then(res => res.json())
+        .then(data => {
+            availableSections = data;
+            sectionOptions.innerHTML = '';
+            
+            if (data.length === 0) {
+                sectionOptions.innerHTML = '<p class="hint">No sections available</p>';
+                return;
+            }
+            
+            data.forEach(section => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'section-btn';
+                btn.textContent = `Section ${section}`;
+                btn.onclick = function() {
+                    // Remove selected class from all buttons
+                    document.querySelectorAll('.section-btn').forEach(b => b.classList.remove('selected'));
+                    // Add selected class to this button
+                    this.classList.add('selected');
+                    
+                    // Create or update hidden input for section
+                    let hiddenInput = document.querySelector('input[name="section"]');
+                    if (!hiddenInput) {
+                        hiddenInput = document.createElement('input');
+                        hiddenInput.type = 'hidden';
+                        hiddenInput.name = 'section';
+                        document.querySelector('.assign-form').appendChild(hiddenInput);
+                    }
+                    hiddenInput.value = section;
+                };
+                sectionOptions.appendChild(btn);
+            });
+        })
+        .catch(error => {
+            console.error('Error loading sections:', error);
+            sectionOptions.innerHTML = '<p class="hint">Error loading sections</p>';
+        });
 });
 
-sectionSelect.disabled = false;
-}
-
-});
-
-});
-
+// Prevent back navigation
+window.history.pushState(null, null, window.location.href);
+window.onpopstate = function () {
+    window.history.go(1);
+};
 </script>
 
 {% endblock %}

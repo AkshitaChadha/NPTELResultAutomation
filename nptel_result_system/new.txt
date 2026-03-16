@@ -1,5 +1,6 @@
 from flask import Flask, render_template, request, redirect, url_for, send_file, make_response
 import pandas as pd
+from evaluator import evaluate_student, custom_round
 from reportlab.platypus import SimpleDocTemplate, Table
 from reportlab.lib import colors
 from reportlab.lib import pagesizes
@@ -11,7 +12,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from database import get_db_connection
 from flask import session 
 from flask import jsonify
-from evaluator import calculate_final_results,custom_round
+
 app = Flask(__name__)
 
 @app.context_processor
@@ -696,16 +697,62 @@ def evaluate():
     college_list = []     # Only for students who haven't taken college exam yet
 
     for student in data:
-        # Re-evaluate using unified function to ensure consistency
-        result = calculate_final_results(student)
-        student.update(result)
+        track = student.get("Track", "")
+        status = str(student.get("Registered", "")).strip()
         
         # Check if college marks have been entered
         college_marks_entered = student.get("College_External_Raw") not in [None, "", "NA"]
         
         # If college marks have been entered, they belong in final_list
-        if college_marks_entered or student.get("Track") in ["College Evaluated", "NPTEL"]:
+        if college_marks_entered or track == "College Evaluated" or track == "NPTEL":
+            # Make sure result is only PASS or FAIL (not "College Exam Required")
+            if student.get("Result") == "College Exam Required":
+                # Re-evaluate to get proper PASS/FAIL
+                internal = student.get("Internal_Final", 0)
+                external = student.get("External_Final", 0)
+                
+                if isinstance(external, (int, float)):
+                    if internal >= 16 and external >= 24:
+                        student["Result"] = "PASS"
+                    else:
+                        student["Result"] = "FAIL"
+                else:
+                    student["Result"] = "FAIL"
+            
             final_list.append(student)
+            continue
+        
+        # Only these cases go to college_list (before college marks are entered)
+        if status == "Not Enrolled" or status == "Enrolled":
+            student["Track"] = "College"
+            student["Result"] = "College Exam Required"
+            college_list.append(student)
+            continue
+            
+        if status == "Registered":
+            # Check if absent in NPTEL
+            if student.get("NPTEL External Marks") == "Absent":
+                student["Track"] = "College"
+                student["Result"] = "College Exam Required"
+                college_list.append(student)
+                continue
+            
+            # Check if they have NPTEL marks and passed
+            nptel_marks = student.get("NPTEL External Marks")
+            if nptel_marks and nptel_marks not in ["NA", "Absent", ""]:
+                try:
+                    from evaluator import evaluate_student
+                    result_data = evaluate_student(student)
+                    student.update(result_data)
+                    
+                    if student.get("Track") == "NPTEL":
+                        final_list.append(student)
+                    else:
+                        college_list.append(student)
+                except:
+                    college_list.append(student)
+            else:
+                college_list.append(student)
         else:
             college_list.append(student)
 
@@ -974,18 +1021,20 @@ def save_external_marks():
         if status_value == "Absent":
             student["NPTEL External Marks"] = "Absent"
             student["Attendance"] = "Absent"
-        else:
-            mark_input = request.form.get(f"external_{roll}", "").strip()
-            try:
-                mark = float(mark_input)
-                student["NPTEL External Marks"] = mark if 0 <= mark <= 75 else 0
-            except:
+            continue
+
+        mark_input = request.form.get(f"external_{roll}", "").strip()
+
+        try:
+            mark = float(mark_input)
+            if 0 <= mark <= 75:
+                student["NPTEL External Marks"] = mark
+            else:
                 student["NPTEL External Marks"] = 0
-            student["Attendance"] = "Present"
-        
-        # Re-evaluate using unified function
-        result = calculate_final_results(student)
-        student.update(result)
+        except:
+            student["NPTEL External Marks"] = 0
+
+        student["Attendance"] = "Present"
 
     conn.execute("""
         UPDATE evaluations
@@ -1002,6 +1051,7 @@ def save_external_marks():
     response = redirect(url_for("evaluate", subject_id=subject_id))
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
     return response
+
 
 import json
 
@@ -1200,7 +1250,6 @@ def download_pdf(eval_id):
 
     elements.append(header_table)
     elements.append(Spacer(1, 0.2*inch))
-    current_date = datetime.now().strftime("%d-%m-%Y")
 
     # ================= SUBJECT DETAILS =================
     if subject:
@@ -1215,7 +1264,7 @@ def download_pdf(eval_id):
             ],
             [
                 Paragraph(f"<b>Section:</b> {subject['section']}", styles['Normal']),
-                Paragraph(f"<b>Date:</b> {current_date}", styles['Normal'])
+                Paragraph(f"<b>Date:</b> ", styles['Normal'])
             ]
         ]
 
@@ -1237,6 +1286,11 @@ def download_pdf(eval_id):
         elements.append(details_table)
         elements.append(Spacer(1, 0.2*inch))
 
+    # ================= DATE LINE =================
+    current_date = datetime.now().strftime("%d-%m-%Y")
+    elements.append(Paragraph(f"<b>Date:</b> {current_date}", styles["Normal"]))
+    elements.append(Spacer(1, 0.1*inch))
+
     # ================= SIMPLIFIED RESULTS TABLE =================
     # Table headers - only S.No, Roll No, Name, Internal, External, Result
     table_data = [["S.No", "Roll No", "Student Name", "Internal", "External", "Result"]]
@@ -1247,22 +1301,12 @@ def download_pdf(eval_id):
         college_absent = s.get("College_External_Raw") == "Absent" or s.get("External_Final") == "Absent"
         is_absent = nptel_absent or college_absent
 
-        # Internal
+        # Internal (College Internal)
         internal = s.get("Internal_Final", 0)
         if internal in ["", None, "-"]:
             internal_display = "0"
         else:
             internal_display = str(internal)
-
-        # External
-        external = s.get("External_Final", "")
-
-        if external in ["", None, "-"]:
-            external_display = "0"
-        elif str(external).upper() == "ABSENT":
-            external_display = "Absent"
-        else:
-            external_display = str(external)
 
         # Check if student was absent in any exam
         nptel_absent = s.get("NPTEL External Marks") == "Absent"
@@ -1271,7 +1315,7 @@ def download_pdf(eval_id):
 
         # Result
         if is_absent:
-            result_display = "FAIL"
+            result_display = "Absent"
         elif s.get("Result") == "PASS":
             result_display = "PASS"
         else:
@@ -1375,6 +1419,22 @@ def save_college_marks():
     data = json.loads(evaluation["data_json"])
 
     for student in data:
+        # Get assignment marks - NA means 0
+        assignment_val = student.get("Assignment Marks")
+        if assignment_val == "NA" or assignment_val is None or assignment_val == "":
+            assignment = 0
+        else:
+            try:
+                assignment = float(assignment_val)
+            except:
+                assignment = 0
+        
+        # Convert assignment 25 → 40 (ALWAYS DONE)
+        internal_from_assignment = custom_round((assignment / 25) * 40) if assignment > 0 else 0
+        
+        # Store the converted internal
+        student["Internal_Converted"] = internal_from_assignment
+
         # Only process students who are in the form (have college marks)
         roll = str(student["University Roll Number"]).strip()
         status = request.form.get(f"status_{roll}")
@@ -1387,18 +1447,47 @@ def save_college_marks():
 
         # Handle ABSENT in college exam
         if status.upper() == "ABSENT":
+            # Even though absent, we still calculate for internal consistency
+            # But result is FAIL and external shows ABSENT
+            total = internal_from_assignment + 0  # 0 for absent
+            
+            final_internal = custom_round(total * 0.4)
+            final_external = custom_round(total * 0.6)
+            
             student["College_External_Raw"] = "ABSENT"
-        else:
-            try:
-                college_external = float(value)
-                if 0 <= college_external <= 60:
-                    student["College_External_Raw"] = college_external
-            except:
-                continue
-        
-        # SINGLE LINE - Re-evaluate using unified function
-        result = calculate_final_results(student)
-        student.update(result)
+            student["Internal_Final"] = final_internal
+            student["External_Final"] = "ABSENT"  # Show ABSENT, not the calculated value
+            student["Total"] = total
+            student["Result"] = "FAIL"  # Absent = FAIL
+            student["Track"] = "College Evaluated"
+            continue
+
+        # Handle college exam marks (0-60) for present students
+        try:
+            college_external = float(value)
+            if 0 <= college_external <= 60:
+                student["College_External_Raw"] = college_external
+                
+                # Total = Internal (from assignment) + College External
+                total = internal_from_assignment + college_external
+                
+                # Re-divide total into 40:60 ratio
+                final_internal = custom_round(total * 0.4)
+                final_external = custom_round(total * 0.6)
+                
+                student["Internal_Final"] = final_internal
+                student["External_Final"] = final_external
+                student["Total"] = total
+                
+                # PASS/FAIL check
+                if final_internal >= 16 and final_external >= 24:
+                    student["Result"] = "PASS"
+                else:
+                    student["Result"] = "FAIL"
+                    
+                student["Track"] = "College Evaluated"
+        except:
+            continue
 
     # AFTER SAVING COLLEGE MARKS, ALL STUDENTS GO TO FINAL RESULTS
     stage_value = "college_done"
@@ -2325,18 +2414,19 @@ def preview_evaluation(eval_id):
     college_list = [] # Students needing college exam (if any)
 
     for student in data:
-        # Re-evaluate using unified function
-        result = calculate_final_results(student)
-        student.update(result)
-        
+        track = student.get("Track", "")
+        result = student.get("Result", "")
         college_marks = student.get("College_External_Raw")
         
         # Check if college marks have been entered
         if college_marks not in [None, "", "NA"]:
             # This student has taken college exam
             final_list.append(student)
-        elif student.get("Track") in ["NPTEL", "College Evaluated"]:
-            # This student passed through NPTEL or has been evaluated
+        elif track == "NPTEL":
+            # This student passed through NPTEL
+            final_list.append(student)
+        elif track == "College Evaluated":
+            # This student has been evaluated through college
             final_list.append(student)
         else:
             # This student still needs college exam
@@ -2361,7 +2451,6 @@ def preview_evaluation(eval_id):
         evaluation_id=evaluation["id"],
         can_edit_college=False      # HOD cannot edit
     )
-
 
 @app.route("/assign_subject/<int:teacher_id>", methods=["GET", "POST"])
 def assign_subject(teacher_id):
@@ -3563,24 +3652,18 @@ def edit_unlocked(subject_id):
     # POST SECTION - Save changes
     # -----------------------
     for student in data:
-
         roll = str(student.get("University Roll Number")).strip()
 
         if roll not in unlocked_rolls:
             continue
 
-        # -----------------------
         # Update registration status
-        # -----------------------
         reg_status = request.form.get(f"registered_{roll}")
         if reg_status:
             student["Registered"] = reg_status
 
-        # -----------------------
         # Update assignment marks
-        # -----------------------
         assignment_mark = request.form.get(f"assignment_{roll}", "").strip()
-
         if assignment_mark:
             try:
                 mark = float(assignment_mark)
@@ -3588,15 +3671,11 @@ def edit_unlocked(subject_id):
                     student["Assignment Marks"] = mark
             except:
                 pass
-
         elif reg_status == "Not Enrolled":
             student["Assignment Marks"] = "NA"
 
-        # -----------------------
-        # Update NPTEL marks
-        # -----------------------
+        # Update NPTEL external marks
         nptel_mark = request.form.get(f"nptel_{roll}", "").strip()
-
         if nptel_mark:
             try:
                 mark = float(nptel_mark)
@@ -3605,18 +3684,13 @@ def edit_unlocked(subject_id):
                     student["Attendance"] = "Present"
             except:
                 pass
-
         elif reg_status != "Registered":
             student["NPTEL External Marks"] = "NA"
 
-        # -----------------------
-        # Update College marks
-        # -----------------------
+        # Update college external marks
         college_value = request.form.get(f"college_{roll}", "").strip()
-
         if college_value.upper() == "ABSENT":
             student["College_External_Raw"] = "ABSENT"
-
         elif college_value:
             try:
                 mark = float(college_value)
@@ -3625,27 +3699,60 @@ def edit_unlocked(subject_id):
             except:
                 pass
 
-        # -----------------------
-        # Recalculate results
-        # -----------------------
-        result = calculate_final_results(student)
-        student.update(result)
+        # Re-evaluate the student but KEEP them in final results
+        # (no going back to college exam)
+        
+        # Convert assignment marks (25→40)
+        assignment_val = student.get("Assignment Marks")
+        if assignment_val == "NA" or assignment_val is None or assignment_val == "":
+            assignment = 0
+        else:
+            try:
+                assignment = float(assignment_val)
+            except:
+                assignment = 0
+        
+        internal_40 = custom_round((assignment / 25) * 40) if assignment > 0 else 0
+        student["Internal_Final"] = internal_40
+        
+        # Get college external marks (these are the final external marks now)
+        college_ext = student.get("College_External_Raw")
+        
+        if college_ext == "ABSENT":
+            student["External_Final"] = "ABSENT"
+            student["Result"] = "FAIL"
+        elif college_ext:
+            try:
+                external = float(college_ext)
+                student["External_Final"] = external
+                student["Total"] = internal_40 + external
+                
+                # PASS/FAIL check
+                if internal_40 >= 16 and external >= 24:
+                    student["Result"] = "PASS"
+                else:
+                    student["Result"] = "FAIL"
+            except:
+                student["External_Final"] = "NA"
+                student["Result"] = "FAIL"
+        else:
+            student["External_Final"] = "NA"
+            student["Result"] = "FAIL"
+        
+        # Force Track to be College Evaluated (never back to College)
+        student["Track"] = "College Evaluated"
 
-    # -----------------------
-    # Save updated evaluation
-    # -----------------------
+    # Update the evaluation data
     conn.execute("""
         UPDATE evaluations
         SET data_json=?,
-            stage='college_done',
+            stage='college_done',  
             locked=1,
             created_at=CURRENT_TIMESTAMP
         WHERE id=?
     """, (json.dumps(data), evaluation["id"]))
 
-    # -----------------------
-    # Lock all records again
-    # -----------------------
+    # Lock all records again after editing
     conn.execute("""
         UPDATE evaluation_records
         SET locked=1

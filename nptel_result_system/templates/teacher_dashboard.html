@@ -1,239 +1,242 @@
 {% extends "base.html" %}
 
 {% block nav_items %}
-
-<a href="/teacher_dashboard">Dashboard</a>
-
+<a href="{{ url_for('teacher_dashboard') }}">Dashboard</a>
 {% endblock %}
-
 
 {% block nav_right %}
-
-<a href="/logout">Logout</a>
-
+<a href="{{ url_for('logout') }}">Logout</a>
 {% endblock %}
-
-
 
 {% block content %}
 
 <div class="container">
+    <!-- ===== HEADER ===== -->
+    <div class="header-section">
+        <div>
+            <h2 class="page-title">Teacher Dashboard</h2>
+            <p><strong>Teacher:</strong> {{ teacher["name"] }}</p>
+            <p><strong>Current Session:</strong> {{ session_label }}</p>
+        </div>
+    </div>
 
-<input type="hidden" name="subject_id" value="{{ session.get('active_subject') }}">
+    <!-- ===== SUBJECTS BY BRANCH ===== -->
+    {% if branch_map %}
+        {% for branch, semesters in branch_map.items() %}
+            <h3 class="branch-heading">{{ branch }}</h3>
+            
+            <table class="styled-table">
+                <thead>
+                    <tr>
+                        <th>Semester</th>
+                        <th>Subject</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for sem, subjects in semesters.items() %}
+                        {% for sub in subjects %}
+                            <tr>
+                                <td>{{ sem }}</td>
+                                <td>
+                                    <strong>{{ sub["subject_name"] }}</strong><br>
+                                    <small>Code: {{ sub["subject_code"] }} | Section: {{ sub["section"] }}</small>
+                                </td>
+                                <td>
+                                    {% if sub["stage"] == "college_done" %}
+                                        <span class="status-badge" style="background-color: #d4edda; color: #155724;">Completed</span>
+                                    {% elif sub["stage"] == "college_pending" %}
+                                        <span class="status-badge" style="background-color: #fff3cd; color: #856404;">College Pending</span>
+                                    {% elif sub["stage"] == "external_saved" %}
+                                        <span class="status-badge" style="background-color: #cff4fc; color: #055160;">Results Ready</span>
+                                    {% elif sub["stage"] == "assignment_done" %}
+                                        <span class="status-badge" style="background-color: #cff4fc; color: #055160;">External Pending</span>
+                                    {% elif sub["stage"] == "registration_done" %}
+                                        <span class="status-badge" style="background-color: #cff4fc; color: #055160;">Assignment Pending</span>
+                                    {% else %}
+                                        <span class="status-badge" style="background-color: #f8d7da; color: #721c24;">Not Started</span>
+                                    {% endif %}
+                                    
+                                    <!-- Show unlocked count if any -->
 
-
-<!-- ===== HEADER SECTION ===== -->
-
-<div style="display:flex; justify-content:space-between; align-items:flex-start;">
-
-<!-- LEFT SIDE -->
-
-<div>
-
-<h2 class="page-title">Teacher Dashboard</h2>
-
-<p><b>Teacher:</b> {{ teacher["name"] }}</p>
-
-<p><b>Current Session:</b> {{ session_label }}</p>
-
+                                </td>
+                                <td>
+                                    <div class="action-buttons">
+                                        {% if sub["stage"] == "college_done" %}
+                                            <!-- Completed - Show View Result -->
+                                            <a href="{{ url_for('evaluate', subject_id=sub['id']) }}">
+                                                <button class="success-btn">View Result</button>
+                                            </a>
+                                            
+                                            <!-- Edit unlocked button - Show if there are unlocked students -->
+                                            {% if sub.get("unlocked_count", 0) > 0 %}
+                                                <a href="{{ url_for('edit_unlocked', subject_id=sub['id']) }}">
+                                                    <button class="yellow-btn">Edit Unlocked ({{ sub["unlocked_count"] }})</button>
+                                                </a>
+                                            {% endif %}
+                                            
+                                        {% elif sub["stage"] == "college_pending" %}
+                                            <!-- College Pending - Show Continue -->
+                                            <a href="{{ url_for('evaluate', subject_id=sub['id']) }}">
+                                                <button class="primary-btn">Continue</button>
+                                            </a>
+                                            
+                                            <!-- Show Reset only if not locked -->
+                                            {% if sub["locked"] == 0 %}
+                                                <form method="POST" action="{{ url_for('reset_evaluation', subject_id=sub['id']) }}" style="display:inline;">
+                                                    <button class="danger-btn" onclick="return confirm('Are you sure you want to reset this evaluation?')">Reset</button>
+                                                </form>
+                                            {% endif %}
+                                            
+                                        {% elif sub["stage"] in ["external_saved", "assignment_done", "registration_done"] %}
+                                            <!-- In progress - Show Continue -->
+                                            <a href="{{ url_for('evaluate', subject_id=sub['id']) }}">
+                                                <button class="primary-btn">Continue</button>
+                                            </a>
+                                            
+                                            {% if sub["locked"] == 0 %}
+                                                <form method="POST" action="{{ url_for('reset_evaluation', subject_id=sub['id']) }}" style="display:inline;">
+                                                    <button class="danger-btn" onclick="return confirm('Are you sure you want to reset this evaluation?')">Reset</button>
+                                                </form>
+                                            {% endif %}
+                                            
+                                        {% else %}
+                                            <!-- Not started - Show Start Evaluation -->
+                                            <a href="{{ url_for('instructions', subject_id=sub['id']) }}">
+                                                <button class="primary-btn">Start Evaluation</button>
+                                            </a>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endfor %}
+    {% else %}
+        <p class="no-data">No subjects assigned yet.</p>
+    {% endif %}
 </div>
 
-
-
-
-</div>
-
-
-<hr>
-
-
-
-
-
-{% if branch_map %}
-
-{% for branch, semesters in branch_map.items() %}
-
-<h3 style="margin-top:30px;">Branch: {{ branch }}</h3>
-
-<table class="styled-table">
-
-<tr>
-
-<th>Semester</th>
-<th>Subject</th>
-<th>Action</th>
-
-</tr>
-
-
-
-{% for sem, subjects in semesters.items() %}
-
-{% for sub in subjects %}
-
-<tr>
-
-<td>{{ sem }}</td>
-
-<td>
-
-<b>{{ sub["subject_name"] }}</b><br>
-
-<small>
-Code: {{ sub["subject_code"] }} |
-Section: {{ sub["section"] }}
-</small>
-
-</td>
-
-<td>
-
-
-
-{% if sub["stage"] == "college_done" %}
-
-<!-- View Result -->
-
-<a href="{{ url_for('evaluate') }}?subject_id={{ sub['id'] }}">
-
-<button class="success-btn">
-View Result
-</button>
-
-</a>
-
-
-
-{% if sub["locked"] == 0 %}
-
-<form method="POST"
-      action="{{ url_for('reset_evaluation', subject_id=sub['id']) }}"
-      style="display:inline;">
-
-<button class="danger-btn"
-        onclick="return confirm('Are you sure you want to reset this evaluation?')">
-
-Reset Evaluation
-
-</button>
-
-</form>
-
-{% endif %}
-
-
-
-<!-- Edit unlocked -->
-
-{% if sub.get("locked") == 1 and sub.get("unlocked_count", 0) > 0 %}
-
-<a href="/edit_unlocked/{{ sub['id'] }}">
-
-<button class="yellow-btn">
-
-Edit Unlocked ({{ sub["unlocked_count"] }})
-
-</button>
-
-</a>
-
-{% endif %}
-
-
-
-{% elif sub["stage"] in ["registration_done", "assignment_done", "external_saved", "college_pending"] %}
-
-
-
-<!-- Continue Evaluation -->
-
-<div style="
-display:flex;
-gap:20px;
-align-items:center;
-flex-wrap:wrap;
-">
-
-<a href="{{ url_for('upload') }}?subject_id={{ sub['id'] }}">
-
-<button class="primary-btn">
-
-Continue Evaluation
-
-</button>
-
-</a>
-
-
-
-<!-- Reset -->
-
-{% if sub["locked"] == 0 %}
-
-<form method="POST"
-      action="{{ url_for('reset_evaluation', subject_id=sub['id']) }}"
-      style="display:inline;"
-      onsubmit="return confirm('Are you sure? This will permanently delete all evaluation data for this subject.');">
-
-<button class="primary-btn" style="background:red;">
-
-Reset Evaluation
-
-</button>
-
-</div>
-
-</form>
-
-{% endif %}
-
-
-
-{% else %}
-
-
-
-<!-- Start Evaluation -->
-
-<a href="{{ url_for('upload') }}?subject_id={{ sub['id'] }}">
-
-<button class="primary-btn">
-
-Start Evaluation
-
-</button>
-
-</a>
-
-
-
-{% endif %}
-
-
-
-</td>
-
-</tr>
-
-{% endfor %}
-
-{% endfor %}
-
-</table>
-
-{% endfor %}
-
-
-
-{% else %}
-
-<p>No subjects assigned yet.</p>
-
-{% endif %}
-
-
-
-</div>
+<style>
+.header-section {
+    margin-bottom: 25px;
+}
+.page-title {
+    font-size: 24px;
+    font-weight: 600;
+    color: #0f172a;
+    margin-bottom: 5px;
+}
+.branch-heading {
+    font-size: 20px;
+    font-weight: 600;
+    color: #1e40af;
+    margin: 30px 0 15px 0;
+    padding-bottom: 8px;
+    border-bottom: 2px solid #dbeafe;
+}
+.styled-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 20px 0;
+    font-size: 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    border-radius: 8px;
+    overflow: hidden;
+}
+.styled-table th {
+    background: #f8fafc;
+    color: #1e293b;
+    font-weight: 600;
+    padding: 14px 12px;
+    text-align: left;
+    border-bottom: 2px solid #2563eb;
+}
+.styled-table td {
+    padding: 14px 12px;
+    border-bottom: 1px solid #e2e8f0;
+    background-color: white;
+}
+.styled-table tbody tr:hover td {
+    background-color: #f8fafc;
+}
+.status-badge {
+    display: inline-block;
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: 500;
+}
+.action-buttons {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+.action-buttons form {
+    display: inline;
+    margin: 0;
+}
+.primary-btn, .success-btn, .danger-btn, .yellow-btn {
+    margin: 2px;
+    min-width: 100px;
+    padding: 8px 14px;
+    font-size: 14px;
+    font-weight: 500;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.primary-btn {
+    background-color: #2563eb;
+    color: white;
+}
+.primary-btn:hover {
+    background-color: #1d4ed8;
+}
+.success-btn {
+    background-color: #059669;
+    color: white;
+}
+.success-btn:hover {
+    background-color: #047857;
+}
+.danger-btn {
+    background-color: #dc2626;
+    color: white;
+}
+.danger-btn:hover {
+    background-color: #b91c1c;
+}
+.yellow-btn {
+    background-color: #d97706;
+    color: white;
+}
+.yellow-btn:hover {
+    background-color: #b45309;
+}
+.no-data {
+    color: #94a3b8;
+    text-align: center;
+    padding: 30px;
+    background: #f8fafc;
+    border-radius: 8px;
+}
+small {
+    font-size: 13px;
+    color: #64748b;
+}
+</style>
+
+<script>
+// Prevent back navigation
+window.history.pushState(null, null, window.location.href);
+window.onpopstate = function () {
+    window.history.go(1);
+};
+</script>
 
 {% endblock %}

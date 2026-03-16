@@ -3,74 +3,298 @@
 <head>
 <title>NPTEL Result Automation System</title>
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+    /* Mobile Responsive Styles */
+    @media screen and (max-width: 768px) {
+        /* Hide center department heading on smaller screens */
+        .center-header {
+            display: none !important;
+        }
+        
+        /* Adjust header layout for mobile - INCREASED SIZE */
+        .header-inner {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 20px;
+        }
+        
+        /* Bigger logo */
+        .logo-area .college-logo {
+            max-width: 120px;
+            height: auto;
+        }
+        
+        /* Bigger system title */
+        .system-title h1 {
+            font-size: 1.8rem;
+            margin: 0;
+            color: #2563eb;
+            font-weight: 700;
+        }
+        
+        .system-title p {
+            font-size: 0.9rem;
+            margin: 2px 0 0 0;
+            color: #6b7280;
+            font-weight: 500;
+        }
+        
+        /* Navbar - SAME LINE, NOT COLUMN */
+        .top-nav {
+            display: flex !important;
+            flex-direction: row !important;
+            justify-content: space-between !important;
+            align-items: center !important;
+            padding: 12px 20px !important;
+            background: #0d6efd !important;
+            width: 100% !important;
+            box-sizing: border-box !important;
+        }
+        
+        .nav-left {
+            display: flex !important;
+            flex-direction: row !important;
+            align-items: center !important;
+            gap: 20px !important;
+            margin: 0 !important;
+            flex-wrap: nowrap !important;
+        }
+        
+        .nav-right {
+            display: flex !important;
+            flex-direction: row !important;
+            align-items: center !important;
+            gap: 10px !important;
+            margin: 0 !important;
+            flex-wrap: nowrap !important;
+        }
+        
+        /* Bigger nav links */
+        .nav-left a, .nav-right a,
+        .nav-left button, .nav-right button {
+            display: inline-block !important;
+            margin: 0 !important;
+            padding: 10px 15px !important;
+            font-size: 1.1rem !important;
+            color: white !important;
+            text-decoration: none !important;
+            background: transparent !important;
+            border: none !important;
+            white-space: nowrap !important;
+            font-weight: 500;
+        }
+        
+        .nav-left a:hover, .nav-right a:hover {
+            text-decoration: underline !important;
+            opacity: 0.9;
+        }
+        
+        /* Bigger footer */
+        .footer-bar {
+            padding: 20px 15px !important;
+            font-size: 0.9rem !important;
+            text-align: center !important;
+            background: #0d6efd !important;
+            color: white !important;
+            width: 100% !important;
+            box-sizing: border-box !important;
+        }
+        
+        .footer-bar p {
+            margin: 8px 0 !important;
+            word-wrap: break-word !important;
+        }
+        
+        /* Page wrapper */
+        .page-wrapper {
+            padding: 15px !important;
+            width: 100% !important;
+            box-sizing: border-box !important;
+        }
+    }
+    
+    /* Medium devices */
+    @media screen and (max-width: 600px) {
+        .header-inner {
+            padding: 12px 15px;
+        }
+        
+        .logo-area .college-logo {
+            max-width: 100px;
+        }
+        
+        .system-title h1 {
+            font-size: 1.6rem;
+        }
+        
+        .system-title p {
+            font-size: 0.8rem;
+        }
+        
+        .nav-left {
+            gap: 12px !important;
+        }
+        
+        .nav-left a, .nav-right a,
+        .nav-left button, .nav-right button {
+            padding: 8px 12px !important;
+            font-size: 1rem !important;
+        }
+    }
+    
+    /* Small devices */
+    @media screen and (max-width: 480px) {
+        .header-inner {
+            padding: 10px 12px;
+        }
+        
+        .logo-area .college-logo {
+            max-width: 80px;
+        }
+        
+        .system-title h1 {
+            font-size: 1.4rem;
+        }
+        
+        .system-title p {
+            font-size: 0.7rem;
+        }
+        
+        .nav-left {
+            gap: 8px !important;
+        }
+        
+        .nav-left a, .nav-right a,
+        .nav-left button, .nav-right button {
+            padding: 6px 8px !important;
+            font-size: 0.9rem !important;
+        }
+        
+        .nav-right {
+            gap: 5px !important;
+        }
+    }
+    
+    /* Very small devices */
+    @media screen and (max-width: 360px) {
+        .header-inner {
+            padding: 8px 10px;
+        }
+        
+        .logo-area .college-logo {
+            max-width: 70px;
+        }
+        
+        .system-title h1 {
+            font-size: 1.2rem;
+        }
+        
+        .nav-left {
+            gap: 5px !important;
+        }
+        
+        .nav-left a, .nav-right a,
+        .nav-left button, .nav-right button {
+            padding: 5px 6px !important;
+            font-size: 0.8rem !important;
+        }
+    }
+</style>
 </head>
-
 <body>
 
 <!-- HEADER -->
-
 <header class="main-header">
+    <div class="header-inner">
+        <!-- Left: Logo -->
+        <div class="logo-area">
+            <img src="{{ url_for('static', filename='agc_logo.png') }}" class="college-logo">
+        </div>
 
-<div class="header-inner">
+        <!-- Center: Department Name and Session (hidden on mobile) -->
+        <div class="center-header">
+            <div class="department-name">
+                Department of <span>{{ department_name if department_name else 'Computer Science & Engineering' }}</span>
+            </div>
+            <div class="session-info">
+                Session: <span>{{ session.get('session_label') if session and session.get('session_label') else 'Jan–May 2026' }}</span>
+            </div>
+        </div>
 
-<div class="logo-area">
-<img src="{{ url_for('static', filename='agc_logo.png') }}" class="college-logo">
-</div>
-
-<div class="system-title">
-<h1>NPTEL</h1>
-<p>Result Automation System</p>
-</div>
-
-</div>
-
+        <!-- Right: System Title -->
+        <div class="system-title">
+            <h1>NPTEL</h1>
+            <p>Result Automation System</p>
+        </div>
+    </div>
 </header>
 
-
-<!-- GLOBAL NAVBAR -->
-
+<!-- GLOBAL NAVBAR - SAME LINE, NOT COLUMN -->
 <nav class="top-nav">
-
-<div class="nav-left">
-{% block nav_items %}{% endblock %}
-</div>
-
-<div class="nav-right">
-{% block nav_right %}{% endblock %}
-</div>
-
+    <div class="nav-left">
+        {% block nav_items %}{% endblock %}
+    </div>
+    <div class="nav-right">
+        {% block nav_right %}{% endblock %}
+    </div>
 </nav>
 
-
 <!-- MAIN LAYOUT -->
-
 <div class="layout">
-
-<div class="page-wrapper">
-{% block content %}{% endblock %}
+    <div class="page-wrapper">
+        {% block content %}{% endblock %}
+    </div>
 </div>
-
-</div>
-
 
 <!-- FOOTER -->
-
 <footer class="footer-bar">
-
-<p>
-📍 12 Km Stone, Amritsar–Jalandhar, G.T Road, Amritsar-143001 (PB), India
-</p>
-
-<p>
-☎ Admission helpline numbers
-&nbsp; 8872009951 &nbsp; | &nbsp; 8872009950
-</p>
-
-<p>
-✉ admission@acet.edu.in
-</p>
-
+    <p>
+        📍 12 Km Stone, Amritsar–Jalandhar, G.T Road, Amritsar-143001 (PB), India
+    </p>
+    <p>
+        ☎ Admission helpline numbers
+        &nbsp; 8872009951 &nbsp; | &nbsp; 8872009950
+    </p>
+    <p>
+        ✉ admission@acet.edu.in
+    </p>
 </footer>
+
+<script>
+// Global prevention of Enter key from submitting forms
+document.addEventListener('DOMContentLoaded', function() {
+    document.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            // Check if the target is not a textarea
+            if (e.target.tagName !== 'TEXTAREA') {
+                e.preventDefault();
+                return false;
+            }
+        }
+    });
+    
+    // Also prevent Enter on all input fields specifically
+    document.querySelectorAll('input').forEach(function(input) {
+        input.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                return false;
+            }
+        });
+    });
+});
+
+// Prevent back navigation
+window.history.pushState(null, null, window.location.href);
+window.onpopstate = function () {
+    window.history.go(1);
+};
+</script>
 
 </body>
 </html>

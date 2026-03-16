@@ -1,123 +1,236 @@
 {% extends "base.html" %}
 
 {% block nav_items %}
-
-<a href="/hod_dashboard">Dashboard</a>
-
+<a href="{{ url_for('hod_dashboard') }}">Dashboard</a>
+<a href="{{ url_for('manage_branches') }}">Branches</a>
+<a href="{{ url_for('manage_subjects') }}">Subjects</a>
+<a href="{{ url_for('manage_teachers') }}">Teachers</a>
+<a href="{{ url_for('subject_overview') }}">Result</a>
 {% endblock %}
-
 
 {% block nav_right %}
-
-<a href="/logout">Logout</a>
-
+<a href="{{ url_for('logout') }}">Logout</a>
 {% endblock %}
-
-
 
 {% block content %}
 
 <div class="container">
 
 <!-- ===== TITLE + ACTION BUTTONS ===== -->
+<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:15px; margin-bottom:20px;">
+    <h2 class="page-title" style="margin:0;">Unlock Student Result</h2>
 
-<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:15px;">
+    <div style="display:flex; gap:12px; flex-wrap:wrap;">
+        <form method="POST" action="{{ url_for('complete_unlock') }}" id="completeUnlockForm" style="display: inline;">
+            <input type="hidden" name="evaluation_id" value="{{ evaluation_id }}">
+            <input type="hidden" name="redirect_to" value="subject_overview">
+            <button type="button" class="primary-btn" onclick="confirmAction('Are you sure you want to completely unlock ALL students? This action cannot be undone.', function() { document.getElementById('completeUnlockForm').submit(); })">
+                Complete Unlock
+            </button>
+        </form>
 
-<h2 class="page-title" style="margin:0;">Unlock Student Result</h2>
-
-<div style="display:flex; gap:12px; flex-wrap:wrap;">
-
-<form method="POST" action="/complete_unlock">
-<input type="hidden" name="evaluation_id" value="{{ evaluation_id }}">
-<button class="primary-btn">
-Complete Unlock
-</button>
-</form>
-
-<form method="POST" action="/discard_result">
-<input type="hidden" name="subject_id" value="{{ subject_id }}">
-<button class="primary-btn" style="background:red;"
-onclick="return confirm('This will delete the entire evaluation. Continue?')">
-Discard Result
-</button>
-</form>
-
+        <form method="POST" action="{{ url_for('discard_result') }}" id="discardResultForm" style="display: inline;">
+            <input type="hidden" name="subject_id" value="{{ subject_id }}">
+            <input type="hidden" name="redirect_to" value="subject_overview">
+            <button type="button" class="danger-btn" onclick="confirmAction('This will delete the ENTIRE evaluation permanently. All marks will be lost. Continue?', function() { document.getElementById('discardResultForm').submit(); })">
+                Discard Result
+            </button>
+        </form>
+    </div>
 </div>
 
-</div>
+<form method="POST" action="{{ url_for('unlock_selected') }}">
+    <input type="hidden" name="evaluation_id" value="{{ evaluation_id }}">
+    <input type="hidden" name="redirect_to" value="subject_overview">
 
-<br>
+    <input type="text"
+           id="searchBox"
+           placeholder="Search by Roll Number..."
+           style="margin-bottom:15px; padding:8px; width:250px; border:1px solid #e2e8f0; border-radius:6px;">
 
+    <table class="styled-table" id="studentTable">
+        <thead>
+            <tr>
+                <th>Select</th>
+                <th>Roll</th>
+                <th>Name</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for student in students %}
+            <tr>
+                <td style="text-align:center;">
+                    <input type="checkbox"
+                           name="selected_rolls"
+                           value="{{ student['University Roll Number'] }}">
+                </td>
+                <td>{{ student['University Roll Number'] }}</td>
+                <td>{{ student['Student Name'] }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
 
-
-<form method="POST" action="/unlock_selected">
-
-<input type="hidden" name="evaluation_id" value="{{ evaluation_id }}">
-
-<input type="text"
-id="searchBox"
-placeholder="Search by Roll Number..."
-style="margin-bottom:15px; padding:6px; width:250px;">
-
-<table class="styled-table" id="studentTable">
-
-<tr>
-<th>Select</th>
-<th>Roll</th>
-<th>Name</th>
-</tr>
-
-{% for student in students %}
-
-<tr>
-
-<td>
-<input type="checkbox"
-name="selected_rolls"
-value="{{ student['University Roll Number'] }}">
-</td>
-
-<td>{{ student['University Roll Number'] }}</td>
-
-<td>{{ student['Student Name'] }}</td>
-
-</tr>
-
-{% endfor %}
-
-</table>
-
-<br>
-
-<button type="submit" class="primary-btn">
-Unlock Selected Records
-</button>
-
+    <br>
+    <button type="submit" class="primary-btn">Unlock Selected Records</button>
 </form>
 
 </div>
 
+<!-- Generic Confirmation Modal -->
+<div id="genericConfirmModal" class="modal">
+    <div class="modal-content">
+        <h3 id="confirmTitle">Confirm Action</h3>
+        <p id="confirmMessage">Are you sure you want to proceed?</p>
+        <div class="modal-buttons" style="display: flex; gap: 10px; justify-content: center; margin-top: 20px;">
+            <button class="primary-btn" id="confirmYes">Yes</button>
+            <button class="secondary-btn" id="confirmNo">No</button>
+        </div>
+    </div>
+</div>
+
+<style>
+.page-title {
+    font-size: 24px;
+    font-weight: 600;
+    color: #0f172a;
+}
+.styled-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 20px 0;
+    font-size: 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    border-radius: 8px;
+    overflow: hidden;
+}
+.styled-table th {
+    background: #f8fafc;
+    color: #1e293b;
+    font-weight: 600;
+    padding: 14px 12px;
+    text-align: left;
+    border-bottom: 2px solid #2563eb;
+}
+.styled-table td {
+    padding: 14px 12px;
+    border-bottom: 1px solid #e2e8f0;
+    background-color: white;
+}
+.styled-table tbody tr:hover td {
+    background-color: #f8fafc;
+}
+.primary-btn, .secondary-btn, .danger-btn {
+    margin: 2px;
+    padding: 10px 20px;
+    font-size: 15px;
+    font-weight: 500;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.primary-btn {
+    background-color: #2563eb;
+    color: white;
+}
+.primary-btn:hover {
+    background-color: #1d4ed8;
+}
+.secondary-btn {
+    background-color: #e5e7eb;
+    color: #475569;
+}
+.secondary-btn:hover {
+    background-color: #d1d5db;
+}
+.danger-btn {
+    background-color: #dc2626;
+    color: white;
+}
+.danger-btn:hover {
+    background-color: #b91c1c;
+}
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    align-items: center;
+    justify-content: center;
+}
+.modal-content {
+    background-color: white;
+    padding: 30px;
+    border-radius: 12px;
+    width: 90%;
+    max-width: 400px;
+    text-align: center;
+}
+</style>
 
 <script>
+// Generic confirmation function
+let confirmCallback = null;
 
+function confirmAction(message, callback) {
+    confirmCallback = callback;
+    document.getElementById('confirmMessage').textContent = message;
+    document.getElementById('genericConfirmModal').style.display = 'flex';
+}
+
+function hideConfirmModal() {
+    document.getElementById('genericConfirmModal').style.display = 'none';
+    confirmCallback = null;
+}
+
+// Search functionality
 document.getElementById("searchBox").addEventListener("keyup", function(){
+    const value = this.value.toLowerCase();
+    const rows = document.querySelectorAll("#studentTable tbody tr");
 
-const value = this.value.toLowerCase();
-
-const rows = document.querySelectorAll("#studentTable tr");
-
-rows.forEach((row,index)=>{
-
-if(index === 0) return;
-
-const roll = row.cells[1].textContent.toLowerCase();
-
-row.style.display = roll.includes(value) ? "" : "none";
-
+    rows.forEach((row) => {
+        const roll = row.cells[1].textContent.toLowerCase();
+        row.style.display = roll.includes(value) ? "" : "none";
+    });
 });
 
-});
+// Modal click handler
+window.onclick = function(event) {
+    const modal = document.getElementById("genericConfirmModal");
+    if (event.target == modal) {
+        hideConfirmModal();
+    }
+};
 
+// Prevent back navigation
+window.history.pushState(null, null, window.location.href);
+window.onpopstate = function () {
+    window.history.go(1);
+};
+
+// Initialize modal buttons when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    const confirmYes = document.getElementById('confirmYes');
+    const confirmNo = document.getElementById('confirmNo');
+    
+    if (confirmYes) {
+        confirmYes.onclick = function() {
+            if (confirmCallback) {
+                confirmCallback();
+            }
+            hideConfirmModal();
+        };
+    }
+    
+    if (confirmNo) {
+        confirmNo.onclick = hideConfirmModal;
+    }
+});
 </script>
 
 {% endblock %}

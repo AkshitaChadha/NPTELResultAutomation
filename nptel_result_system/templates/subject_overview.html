@@ -1,0 +1,317 @@
+{% extends "base.html" %}
+
+{% block nav_items %}
+<a href="{{ url_for('hod_dashboard') }}">Dashboard</a>
+<a href="{{ url_for('manage_branches') }}">Branches</a>
+<a href="{{ url_for('manage_subjects') }}">Subjects</a>
+<a href="{{ url_for('manage_teachers') }}">Teachers</a>
+<a href="{{ url_for('subject_overview') }}" class="active">Result</a>
+<a href="{{ url_for('result_analysis') }}" class="active">Analysis</a>
+{% endblock %}
+
+{% block nav_right %}
+<a href="{{ url_for('logout') }}">Logout</a>
+{% endblock %}
+
+{% block content %}
+
+<div class="container">
+
+<!-- HEADER -->
+<div class="page-header">
+    <h2 class="page-title">Result Overview</h2>
+</div>
+
+<!-- SUBJECTS BY BRANCH -->
+{% if branch_map %}
+    {% for branch, semester_map in branch_map.items() %}
+        <h3 class="branch-heading">{{ branch }}</h3>
+        
+        <table class="styled-table fixed-table">
+            <colgroup>
+                <col style="width: 10%">
+                <col style="width: 32%">
+                <col style="width: 18%">
+                <col style="width: 15%">
+                <col style="width: 25%">
+            </colgroup>
+            <thead>
+                <tr>
+                    <th>Semester</th>
+                    <th>Subject</th>
+                    <th>Teacher</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for sem, subject_list in semester_map.items() %}
+                    {% for sub in subject_list %}
+                        <tr>
+                            <td>{{ sem }}</td>
+                            <td>
+                                <strong>{{ sub["subject_name"] }}</strong><br>
+                                <span class="subject-code">Code: {{ sub["subject_code"] }} | Sec: {{ sub["section"] }}</span>
+                            </td>
+                            <td>{{ sub["teacher_name"] }}</td>
+                            <td>
+                                {% if sub["stage"] == "college_done" %}
+                                    <span class="status-badge completed">Completed</span>
+                                {% elif sub["stage"] == "college_pending" %}
+                                    <span class="status-badge pending">College Pending</span>
+                                {% elif sub["stage"] == "external_saved" %}
+                                    <span class="status-badge in-progress">Results Ready</span>
+                                {% elif sub["stage"] == "assignment_done" %}
+                                    <span class="status-badge in-progress">External Pending</span>
+                                {% elif sub["stage"] == "registration_done" %}
+                                    <span class="status-badge in-progress">Assignment Pending</span>
+                                {% else %}
+                                    <span class="status-badge not-started">Not Started</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <div class="action-buttons">
+                                    {% if sub["evaluation_id"] %}
+                                        <a href="{{ url_for('preview_evaluation', eval_id=sub['evaluation_id']) }}" class="action-link">
+                                            <button class="primary-btn action-btn">Preview</button>
+                                        </a>
+                                    {% endif %}
+                                    
+                                    {% if sub.partial_unlock_count and sub.partial_unlock_count > 0 %}
+                                        <a href="{{ url_for('unlock_marks', subject_id=sub['id']) }}" class="action-link">
+                                            <button class="yellow-btn action-btn">Unlocked ({{ sub.partial_unlock_count }})</button>
+                                        </a>
+                                    {% elif sub["locked"] == 1 %}
+                                        <a href="{{ url_for('unlock_marks', subject_id=sub['id']) }}" class="action-link">
+                                            <button class="danger-btn action-btn">Locked</button>
+                                        </a>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                {% endfor %}
+            </tbody>
+        </table>
+    {% endfor %}
+{% else %}
+    <p class="no-data">No subjects assigned yet.</p>
+{% endif %}
+
+</div>
+
+<style>
+.page-header {
+    margin-bottom: 25px;
+}
+
+.page-title {
+    font-size: 24px;
+    font-weight: 600;
+    color: #0f172a;
+    margin-bottom: 5px;
+}
+
+.branch-heading {
+    font-size: 20px;
+    font-weight: 600;
+    color: #1e40af;
+    margin: 30px 0 15px 0;
+    padding-bottom: 8px;
+    border-bottom: 2px solid #dbeafe;
+}
+
+/* Table Styles with fixed layout for equal columns */
+.styled-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 20px 0;
+    font-size: 15px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    border-radius: 8px;
+    overflow: hidden;
+    table-layout: fixed;
+}
+
+.fixed-table {
+    table-layout: fixed;
+}
+
+.styled-table th {
+    background: #f8fafc;
+    color: #1e293b;
+    font-weight: 600;
+    padding: 14px 10px;
+    text-align: left;
+    font-size: 15px;
+    border-bottom: 2px solid #2563eb;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.styled-table td {
+    padding: 14px 10px;
+    border-bottom: 1px solid #e2e8f0;
+    background-color: white;
+    font-size: 14px;
+    vertical-align: middle;
+    word-wrap: break-word;
+}
+
+.styled-table tbody tr:hover td {
+    background-color: #f8fafc;
+}
+
+.subject-code {
+    font-size: 12px;
+    color: #64748b;
+    display: block;
+    margin-top: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Status Badges */
+.status-badge {
+    display: inline-block;
+    padding: 5px 10px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 500;
+    white-space: nowrap;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.status-badge.completed {
+    background-color: #d4edda;
+    color: #155724;
+}
+
+.status-badge.pending {
+    background-color: #fff3cd;
+    color: #856404;
+}
+
+.status-badge.in-progress {
+    background-color: #cff4fc;
+    color: #055160;
+}
+
+.status-badge.not-started {
+    background-color: #f8d7da;
+    color: #721c24;
+}
+
+/* Action Buttons - Improved spacing */
+.action-buttons {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-start;
+}
+
+.action-link {
+    text-decoration: none;
+    display: inline-block;
+}
+
+.action-btn {
+    margin: 0;
+    min-width: 80px;
+    padding: 7px 10px;
+    font-size: 12px;
+    font-weight: 500;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.primary-btn.action-btn {
+    background-color: #2563eb;
+    color: white;
+}
+
+.primary-btn.action-btn:hover {
+    background-color: #1d4ed8;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(37, 99, 235, 0.3);
+}
+
+.yellow-btn.action-btn {
+    background-color: #d97706;
+    color: white;
+}
+
+.yellow-btn.action-btn:hover {
+    background-color: #b45309;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(217, 119, 6, 0.3);
+}
+
+.danger-btn.action-btn {
+    background-color: #dc2626;
+    color: white;
+}
+
+.danger-btn.action-btn:hover {
+    background-color: #b91c1c;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(220, 38, 38, 0.3);
+}
+
+/* No data message */
+.no-data {
+    color: #94a3b8;
+    text-align: center;
+    padding: 40px;
+    background: #f8fafc;
+    border-radius: 8px;
+    font-size: 16px;
+}
+
+/* Responsive adjustments */
+@media (max-width: 1200px) {
+    .styled-table {
+        font-size: 13px;
+    }
+    
+    .action-btn {
+        min-width: 70px;
+        padding: 6px 8px;
+        font-size: 11px;
+    }
+}
+
+@media (max-width: 992px) {
+    .fixed-table {
+        table-layout: auto;
+    }
+    
+    .action-buttons {
+        flex-direction: column;
+        gap: 5px;
+    }
+    
+    .action-btn {
+        width: 100%;
+    }
+}
+</style>
+
+<script>
+// Prevent back navigation
+window.history.pushState(null, null, window.location.href);
+window.onpopstate = function () {
+    window.history.go(1);
+};
+</script>
+
+{% endblock %}

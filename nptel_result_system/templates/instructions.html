@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+
+{% block nav_items %}
+{% if session.role == "HOD" %}
+<a href="/hod_dashboard">Dashboard</a>
+{% elif session.role == "TEACHER" %}
+<a href="/teacher_dashboard">Dashboard</a>
+{% endif %}
+{% endblock %}
+
+{% block nav_right %}
+<a href="/logout">Logout</a>
+{% endblock %}
+
+{% block content %}
+<div class="container" style="max-width: 1400px;">
+
+<!-- Important Guidelines - Moved to Top -->
+<div class="notes-container" style="margin-bottom: 30px;">
+    <h3 style="margin: 0 0 15px 0; color: #1e40af; font-size: 20px; font-weight: 600;">Important Guidelines</h3>
+    
+    <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+        <!-- Status Guidelines -->
+        <div class="guideline-card" style="flex: 1; min-width: 250px;">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+                <span style="background: #dbeafe; color: #1e40af; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 13px;">1</span>
+                <h4 style="margin: 0; color: #1e293b; font-size: 15px; font-weight: 600;">Registration Status</h4>
+            </div>
+            <div style="margin-left: 32px;">
+                <div><span class="badge">Registered</span> - Full participation</div>
+                <div><span class="badge">Enrolled</span> - Only assignment</div>
+                <div><span class="badge">Not Enrolled</span> - No participation</div>
+            </div>
+        </div>
+
+        <!-- Marks Guidelines -->
+        <div class="guideline-card" style="flex: 1; min-width: 250px;">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+                <span style="background: #dbeafe; color: #1e40af; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 13px;">2</span>
+                <h4 style="margin: 0; color: #1e293b; font-size: 15px; font-weight: 600;">Marks Entry</h4>
+            </div>
+            <div style="margin-left: 32px;">
+                <div><span class="badge">assignment marks</span> : 0-25</div>
+                <div><span class="badge">external marks</span> : 0-75</div>
+                <div>Write <span class="badge">ABSENT</span> if absent</div>
+            </div>
+        </div>
+
+        <!-- Process Guidelines -->
+        <div class="guideline-card" style="flex: 1; min-width: 250px;">
+            <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+                <span style="background: #dbeafe; color: #1e40af; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 13px;">3</span>
+                <h4 style="margin: 0; color: #1e293b; font-size: 15px; font-weight: 600;">Process</h4>
+            </div>
+            <div style="margin-left: 32px;">
+                <div>Empty fields filled manually later</div>
+                <div>Review before saving</div>
+                <div>Changes cannot be undone</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<h2 class="page-title" style="font-size: 24px; font-weight: 600; color: #0f172a; margin-bottom: 10px;">Select Upload Type</h2>
+<p style="margin-bottom: 25px; color: #4b5563; font-size: 16px;">Choose how you want to upload student data</p>
+
+<!-- Horizontal Cards Container - Left Aligned -->
+<div style="display: flex; gap: 25px; flex-wrap: wrap; margin-bottom: 30px;">
+
+    <!-- BASIC UPLOAD CARD -->
+    <div class="upload-card" style="flex: 1; min-width: 450px; max-width: 550px;">
+        <h3 class="card-title" style="color: #1e40af; margin: 0 0 20px 0; font-size: 22px; font-weight: 600; padding-left: 0;">Basic Upload</h3>
+        
+        <div class="example-section">
+            <h4 class="section-heading" style="margin: 0 0 12px 0; color: #1e293b; font-size: 16px; font-weight: 600;">Excel Format</h4>
+            <table class="example-table" style="width: 100%; border-collapse: collapse; font-size: 13px; background: white; border-radius: 8px; border: 1px solid #e2e8f0; overflow: hidden;">
+                <tr>
+                    <th style="background: #dbeafe; padding: 12px; border: 1px solid #bfdbfe; font-weight: 600; text-align: left; color: #1e40af; font-size: 13px;">sno</th>
+                    <th style="background: #dbeafe; padding: 12px; border: 1px solid #bfdbfe; font-weight: 600; text-align: left; color: #1e40af; font-size: 13px;">university roll number</th>
+                    <th style="background: #dbeafe; padding: 12px; border: 1px solid #bfdbfe; font-weight: 600; text-align: left; color: #1e40af; font-size: 13px;">student name</th>
+                    <th style="background: #dbeafe; padding: 12px; border: 1px solid #bfdbfe; font-weight: 600; text-align: left; color: #1e40af; font-size: 13px;">father's name</th>
+                </tr>
+                <tr>
+                    <td style="padding: 10px 12px; border: 1px solid #e2e8f0; font-size: 13px;">1</td>
+                    <td style="padding: 10px 12px; border: 1px solid #e2e8f0; font-size: 13px;">2101012345</td>
+                    <td style="padding: 10px 12px; border: 1px solid #e2e8f0; font-size: 13px;">Aman Sharma</td>
+                    <td style="padding: 10px 12px; border: 1px solid #e2e8f0; font-size: 13px;">Rajesh Sharma</td>
+                </tr>
+                <tr>
+                    <td style="padding: 10px 12px; border: 1px solid #e2e8f0; font-size: 13px;">2</td>
+                    <td style="padding: 10px 12px; border: 1px solid #e2e8f0; font-size: 13px;">2101012346</td>
+                    <td style="padding: 10px 12px; border: 1px solid #e2e8f0; font-size: 13px;">Priya Singh</td>
+                    <td style="padding: 10px 12px; border: 1px solid #e2e8f0; font-size: 13px;">Suresh Singh</td>
+                </tr>
+                <tr>
+                    <td style="padding: 10px 12px; border: 1px solid #e2e8f0; font-size: 13px;">3</td>
+                    <td style="padding: 10px 12px; border: 1px solid #e2e8f0; font-size: 13px;">2101012347</td>
+                    <td style="padding: 10px 12px; border: 1px solid #e2e8f0; font-size: 13px;">Rahul Verma</td>
+                    <td style="padding: 10px 12px; border: 1px solid #e2e8f0; font-size: 13px;">Ramesh Verma</td>
+                </tr>
+            </table>
+        </div>
+
+        <div class="columns-section">
+            <h4 class="section-heading" style="margin: 0 0 12px 0; color: #1e293b; font-size: 16px; font-weight: 600;">Required Columns</h4>
+            <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+                <span class="column-name">sno</span>
+                <span class="column-name">university roll number</span>
+                <span class="column-name">student name</span>
+                <span class="column-name">father's name</span>
+            </div>
+        </div>
+
+        <a href="/upload/basic?subject_id={{ session.get('active_subject') }}" class="card-link">
+            <button class="select-btn">Select Basic Upload</button>
+        </a>
+    </div>
+
+    <!-- FULL UPLOAD CARD - More Space -->
+    <div class="upload-card" style="flex: 1.5; min-width: 650px; max-width: 800px;">
+        <h3 class="card-title" style="color: #1e40af; margin: 0 0 20px 0; font-size: 22px; font-weight: 600; padding-left: 0;">Full Upload</h3>
+        
+        <div class="example-section">
+            <h4 class="section-heading" style="margin: 0 0 12px 0; color: #1e293b; font-size: 16px; font-weight: 600;">Excel Format</h4>
+            <div style="overflow-x: auto;">
+                <table class="example-table full-table" style="width: 100%; border-collapse: collapse; font-size: 12px; background: white; border-radius: 8px; border: 1px solid #e2e8f0; overflow: hidden;">
+                    <tr>
+                        <th style="background: #dbeafe; padding: 10px; border: 1px solid #bfdbfe; font-weight: 600; text-align: left; color: #1e40af;">sno</th>
+                        <th style="background: #dbeafe; padding: 10px; border: 1px solid #bfdbfe; font-weight: 600; text-align: left; color: #1e40af;">university roll number</th>
+                        <th style="background: #dbeafe; padding: 10px; border: 1px solid #bfdbfe; font-weight: 600; text-align: left; color: #1e40af;">student name</th>
+                        <th style="background: #dbeafe; padding: 10px; border: 1px solid #bfdbfe; font-weight: 600; text-align: left; color: #1e40af;">father's name</th>
+                        <th style="background: #dbeafe; padding: 10px; border: 1px solid #bfdbfe; font-weight: 600; text-align: left; color: #1e40af;">registration status</th>
+                        <th style="background: #dbeafe; padding: 10px; border: 1px solid #bfdbfe; font-weight: 600; text-align: left; color: #1e40af;">assignment marks</th>
+                        <th style="background: #dbeafe; padding: 10px; border: 1px solid #bfdbfe; font-weight: 600; text-align: left; color: #1e40af;">external marks</th>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px; border: 1px solid #e2e8f0;">1</td>
+                        <td style="padding: 8px; border: 1px solid #e2e8f0;">2101012345</td>
+                        <td style="padding: 8px; border: 1px solid #e2e8f0;">Aman Sharma</td>
+                        <td style="padding: 8px; border: 1px solid #e2e8f0;">Rajesh Sharma</td>
+                        <td style="padding: 8px; border: 1px solid #e2e8f0;">Registered</td>
+                        <td style="padding: 8px; border: 1px solid #e2e8f0;">22</td>
+                        <td style="padding: 8px; border: 1px solid #e2e8f0;">68</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px; border: 1px solid #e2e8f0;">2</td>
+                        <td style="padding: 8px; border: 1px solid #e2e8f0;">2101012346</td>
+                        <td style="padding: 8px; border: 1px solid #e2e8f0;">Priya Singh</td>
+                        <td style="padding: 8px; border: 1px solid #e2e8f0;">Suresh Singh</td>
+                        <td style="padding: 8px; border: 1px solid #e2e8f0;">Enrolled</td>
+                        <td style="padding: 8px; border: 1px solid #e2e8f0;">18</td>
+                        <td style="padding: 8px; border: 1px solid #e2e8f0;"></td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px; border: 1px solid #e2e8f0;">3</td>
+                        <td style="padding: 8px; border: 1px solid #e2e8f0;">2101012347</td>
+                        <td style="padding: 8px; border: 1px solid #e2e8f0;">Rahul Verma</td>
+                        <td style="padding: 8px; border: 1px solid #e2e8f0;">Ramesh Verma</td>
+                        <td style="padding: 8px; border: 1px solid #e2e8f0;">Not Enrolled</td>
+                        <td style="padding: 8px; border: 1px solid #e2e8f0;"></td>
+                        <td style="padding: 8px; border: 1px solid #e2e8f0;">ABSENT</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+
+        <div class="columns-section">
+            <h4 class="section-heading" style="margin: 0 0 12px 0; color: #1e293b; font-size: 16px; font-weight: 600;">Required Columns</h4>
+            <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+                <span class="column-name">sno</span>
+                <span class="column-name">university roll number</span>
+                <span class="column-name">student name</span>
+                <span class="column-name">father's name</span>
+                <span class="column-name">registration status</span>
+                <span class="column-name">assignment marks</span>
+                <span class="column-name">external marks</span>
+            </div>
+        </div>
+
+        <a href="/upload/full?subject_id={{ session.get('active_subject') }}" class="card-link">
+            <button class="select-btn">Select Full Upload</button>
+        </a>
+    </div>
+
+</div>
+
+</div>
+
+
+{% endblock %}

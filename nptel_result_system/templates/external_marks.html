@@ -1,141 +1,203 @@
 {% extends "base.html" %}
 
 {% block nav_items %}
-
 <a href="/teacher_dashboard">Dashboard</a>
-
 {% endblock %}
-
 
 {% block nav_right %}
-
 <a href="/logout">Logout</a>
-
 {% endblock %}
-
-
 
 {% block content %}
 
-<script>
 
+<script>
 function toggleMarks(select, roll) {
     const input = document.getElementById("external_" + roll);
-
+    
     if (select.value === "Absent") {
         input.value = "";
-        input.readOnly = true;
-        input.removeAttribute("required");
+        input.disabled = true;
+        input.classList.add("faded");
     } else {
-        input.readOnly = false;
-        input.setAttribute("required", "required");
+        input.disabled = false;
+        input.classList.remove("faded");
     }
 }
 
-/* 🔥 ENTER → MOVE TO NEXT INPUT */
 function moveNext(event, roll) {
     if (event.key === "Enter") {
         event.preventDefault();
-
-        const inputs = Array.from(document.querySelectorAll("input[type='number']"))
-            .filter(input => !input.readOnly);
-
+        const inputs = Array.from(document.querySelectorAll("input[type='number']:not(:disabled)"));
         const current = document.getElementById("external_" + roll);
         const index = inputs.indexOf(current);
-
         if (index > -1 && index < inputs.length - 1) {
             inputs[index + 1].focus();
         }
     }
 }
-
 </script>
-
-
 
 <div class="container">
 
-<h2 class="page-title">Enter External Marks (Out of 75)</h2>
+<h2 class="page-title">Enter NPTEL External Marks (Out of 75)</h2>
 
-<form action="/save_external_marks" method="POST">
+<form id="externalForm" action="/save_external_marks" method="POST">
 
 <input type="hidden" name="subject_id" value="{{ session.get('active_subject') }}">
 
 <table class="styled-table">
-
-<tr>
-<th>S.No</th>
-<th>Roll</th>
-<th>Name</th>
-<th>Registered</th>
-<th>Present / Absent</th>
-<th>External (75)</th>
-</tr>
-
-{% for row in data %}
-<tr>
-
-<td>{{ row.get("SNo","") }}</td>
-
-<td>{{ row.get("University Roll Number","") }}</td>
-
-<td>{{ row.get("Student Name","") }}</td>
-
-<td>{{ row.get("Registered","") }}</td>
-
+    <thead>
+        <tr>
+            <th>S.No</th>
+            <th>Roll</th>
+            <th>Name</th>
+            <th>Status</th>
+            <th>Present / Absent</th>
+            <th>NPTEL External (75)</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for row in data %}
+        <tr data-status="{{ row.get('Registered', '') }}" 
+            {% if row.get('Registered') != 'Registered' %}class="disabled-row"{% endif %}>
+            
+            <td>{{ row.get("SNo","") }}</td>
+            <td>{{ row.get("University Roll Number","") }}</td>
+            <td>{{ row.get("Student Name","") }}</td>
+            
+            <!-- Status Column -->
+            <td>
+                {% if row.get("Registered") == "Registered" %}
+                    <span class="status-badge status-registered">Registered</span>
+                {% elif row.get("Registered") == "Enrolled" %}
+                    <span class="status-badge status-enrolled">Enrolled</span>
+                {% else %}
+                    <span class="status-badge status-not-enrolled">Not Enrolled</span>
+                {% endif %}
+            </td>
+            
+            <!-- Present/Absent Column -->
+            <td>
+                {% if row.get("Registered") == "Registered" %}
+                    <select name="status_{{ row.get('University Roll Number') }}"
+                            class="status-select"
+                            onchange="toggleMarks(this, '{{ row.get('University Roll Number') }}')">
+                        <option value="Present" {% if row.get('Attendance') == 'Present' %}selected{% endif %}>Present</option>
+                        <option value="Absent" {% if row.get('Attendance') == 'Absent' %}selected{% endif %}>Absent</option>
+                    </select>
+                {% elif row.get("Registered") == "Enrolled" %}
+                    <span>No NPTEL Exam</span>
+                {% else %}
+                    <span>Not Enrolled</span>
+                {% endif %}
+            </td>
+            
+            <!-- External Marks Column -->
+            <!-- In the external marks column -->
 <td>
-
-{% if row.get("Registered") == "Not Registered" %}
-
-Not Applicable
-
-{% else %}
-
-<select name="status_{{ row.get('University Roll Number') }}"
-        onchange="toggleMarks(this, '{{ row.get('University Roll Number') }}')">
-
-<option value="Present">Present</option>
-<option value="Absent">Absent</option>
-
-</select>
-
-{% endif %}
-
+    {% if row.get("Registered") == "Registered" %}
+        <input type="number"
+               id="external_{{ row.get('University Roll Number') }}"
+               name="external_{{ row.get('University Roll Number') }}"
+               value="{% if row.get('NPTEL External Marks') and row.get('NPTEL External Marks') != 'ABSENT' %}{{ row.get('NPTEL External Marks', '') }}{% endif %}"
+               min="0"
+               max="75"
+               step="0.01"
+               class="external-input"
+               onkeydown="moveNext(event, '{{ row.get('University Roll Number') }}')"
+               placeholder="0-75">
+    {% elif row.get("Registered") == "Enrolled" %}
+        <input type="text"
+               value="NA"
+               class="external-input"
+               style="background-color: #f1f5f9; text-align: center;"
+               readonly
+               disabled>
+    {% else %}
+        <input type="text"
+               value="NA"
+               class="external-input"
+               style="background-color: #f1f5f9; text-align: center;"
+               readonly
+               disabled>
+    {% endif %}
 </td>
-
-<td>
-
-{% if row.get("Registered") == "Not Registered" %}
-
-<input type="number" value=" " readonly>
-
-{% else %}
-
-<input type="number"
-       id="external_{{ row.get('University Roll Number') }}"
-       name="external_{{ row.get('University Roll Number') }}"
-       min="0"
-       max="75"
-       onkeydown="moveNext(event, '{{ row.get('University Roll Number') }}')">
-
-{% endif %}
-
-</td>
-
-</tr>
-{% endfor %}
-
+        </tr>
+        {% endfor %}
+    </tbody>
 </table>
 
 <br>
 
-<button type="submit" class="primary-btn">
-Save & Evaluate
+<button type="button" class="primary-btn" onclick="showConfirmModal()">
+    Save & Evaluate
 </button>
 
 </form>
 
 </div>
 
-{% endblock %}
+<!-- Confirmation Modal -->
+<div id="confirmModal" class="modal">
+    <div class="modal-content">
+        <h3>Confirm Submission</h3>
+        <p>Please verify all external marks carefully. Once saved, you cannot return to this page.</p>
+        <div class="modal-buttons">
+            <button class="btn-confirm" onclick="submitForm()">Submit</button>
+            <button class="btn-cancel" onclick="closeConfirmModal()">Cancel</button>
+        </div>
+    </div>
+</div>
 
+<script>
+// Prevent back navigation
+window.history.pushState(null, null, window.location.href);
+window.onpopstate = function () {
+    window.history.go(1);
+};
+
+// Modal functions
+let formToSubmit = null;
+
+function showConfirmModal() {
+    formToSubmit = document.getElementById('externalForm');
+    document.getElementById('confirmModal').style.display = 'flex';
+}
+
+function submitForm() {
+    if (formToSubmit) {
+        formToSubmit.submit();
+    }
+    closeConfirmModal();
+}
+
+function closeConfirmModal() {
+    document.getElementById('confirmModal').style.display = 'none';
+    formToSubmit = null;
+}
+
+window.onclick = function(event) {
+    const modal = document.getElementById('confirmModal');
+    if (event.target == modal) {
+        modal.style.display = 'none';
+        formToSubmit = null;
+    }
+}
+
+// Disable inputs for non-Registered students
+document.addEventListener('DOMContentLoaded', function() {
+    const rows = document.querySelectorAll('tr[data-status]');
+    rows.forEach(row => {
+        const status = row.dataset.status;
+        if (status !== 'Registered') {
+            const select = row.querySelector('select');
+            const input = row.querySelector('input');
+            if (select) select.disabled = true;
+            if (input) input.disabled = true;
+        }
+    });
+});
+</script>
+
+{% endblock %}
