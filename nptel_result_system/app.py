@@ -1,3900 +1,7766 @@
 from flask import Flask, render_template, request, redirect, url_for, send_file, make_response
+
 import pandas as pd
+
 from reportlab.platypus import SimpleDocTemplate, Table
+
 from reportlab.lib import colors
+
 from reportlab.lib import pagesizes
+
 from reportlab.lib.units import inch
+
 import io
+
 from database import init_db
+
 from flask import session, flash
+
 from werkzeug.security import generate_password_hash, check_password_hash
+
 from database import get_db_connection
+
 from flask import session 
+
 from flask import jsonify
+
 from evaluator import calculate_final_results,custom_round
+
 app = Flask(__name__)
 
+
+
 @app.context_processor
+
 def inject_department():
+
     """Inject department name into all templates based on logged-in user"""
+
     department_name = "Computer Science & Engineering"  # Default
+
     
+
     if "user_id" in session:
+
         conn = get_db_connection()
+
         try:
+
             if session.get("role") == "HOD":
+
                 # For HOD, get their own department
+
                 hod = conn.execute(
+
                     "SELECT department FROM hods WHERE id=?", 
+
                     (session["user_id"],)
+
                 ).fetchone()
+
                 if hod:
+
                     department_name = hod["department"]
+
                     
+
             elif session.get("role") == "TEACHER":
+
                 # For teacher, get department from their HOD
+
                 teacher = conn.execute(
+
                     "SELECT hod_id FROM teachers WHERE id=?", 
+
                     (session["user_id"],)
+
                 ).fetchone()
+
                 if teacher:
+
                     hod = conn.execute(
+
                         "SELECT department FROM hods WHERE id=?", 
+
                         (teacher["hod_id"],)
+
                     ).fetchone()
+
                     if hod:
+
                         department_name = hod["department"]
+
         finally:
+
             conn.close()
+
     
+
     return dict(department_name=department_name)
 
+
+
 @app.after_request
+
 def add_security_headers(response):
+
     response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+
     response.headers["Pragma"] = "no-cache"
+
     response.headers["Expires"] = "0"
+
     return response
+
+
+
 
 
 from datetime import timedelta
 
+
+
 app.secret_key = "super_strong_random_secret_987654321"
+
 app.permanent_session_lifetime = timedelta(minutes=30)
 
+
+
 @app.route("/")
+
 def home():
+
     return redirect("/login")
 
 
+
+
+
 @app.route("/upload/<upload_type>", methods=["GET", "POST"])
+
 def upload(upload_type):
+
     """Unified upload handler for both basic and full uploads"""
+
     
+
     if "user_id" not in session:
+
         return redirect("/login")
+
     
+
     subject_id = session.get("active_subject")
+
     if not subject_id:
+
         return "ERROR: active_subject missing in session"
+
     
+
     if request.method == "GET":
+
         # Show upload page with appropriate type
+
         conn = get_db_connection()
+
         subject = conn.execute("""
+
             SELECT * FROM subjects WHERE id=? AND session_id=?
+
         """, (subject_id, session["active_session_id"])).fetchone()
+
         conn.close()
+
         
+
         return render_template("upload.html", subject=subject, upload_type=upload_type)
+
     
+
     # POST handling for file upload
+
     return handle_upload(upload_type)
 
+
+
 @app.route("/save_registration", methods=["POST"])
+
 def save_registration():
 
+
+
     if "user_id" not in session:
+
         return redirect("/login")
+
+
 
     subject_id = int(session.get("active_subject"))
+
     active_session_id = session.get("active_session_id")
+
     upload_type = request.form.get("upload_type", "basic")
 
+
+
     if not subject_id or not active_session_id:
+
         return "ERROR: session missing"
+
+
 
     rolls = request.form.getlist("roll[]")
+
     statuses = request.form.getlist("registered[]")
 
+
+
     import json
+
     conn = get_db_connection()
+
+
 
     # Load ORIGINAL_DATA from memory
+
     global ORIGINAL_DATA
 
+
+
     for i in range(len(rolls)):
+
         for student in ORIGINAL_DATA:
+
             if student["University Roll Number"] == rolls[i]:
+
                 student["Registered"] = statuses[i]
+
                 
+
                 # For full upload, preserve marks from Excel
+
                 if upload_type == "full":
+
                     # Marks already present, just keep them
+
                     pass
+
                 else:
+
                     # Initialize fields for basic upload
+
                     if statuses[i] == "Not Enrolled":
+
                         student["Assignment Marks"] = 0
+
                         student["NPTEL External Marks"] = "NOT ENROLLED"
+
                     elif statuses[i] == "Enrolled":
+
                         student["NPTEL External Marks"] = "ENROLLED - NO EXAM"
 
+
+
     # Save to database
+
     existing = conn.execute("""
+
     SELECT id FROM evaluations
+
     WHERE subject_id=? AND session_id=? AND teacher_id=?
+
     """, (subject_id, active_session_id, session["user_id"])).fetchone()
+
+
 
     if existing:
+
         conn.execute("""
+
             UPDATE evaluations
+
             SET data_json=?,
+
                 stage='registration_done',
+
                 created_at=CURRENT_TIMESTAMP
+
             WHERE id=?
+
         """, (json.dumps(ORIGINAL_DATA), existing["id"]))
+
     else:
+
         conn.execute("""
+
             INSERT INTO evaluations
+
             (subject_id, teacher_id, session_id, data_json, stage, locked)
+
             VALUES (?, ?, ?, ?, ?, 0)
+
         """, (
+
             subject_id,
+
             session["user_id"],
+
             active_session_id,
+
             json.dumps(ORIGINAL_DATA),
+
             "registration_done"
+
         ))
 
+
+
     conn.commit()
+
     conn.close()
+
+
 
     # For full upload, go to assignment page (which will show pre-filled marks)
+
     return redirect(url_for("save_assignment", subject_id=subject_id))
 
+
+
 @app.route("/save_assignment", methods=["GET", "POST"])
+
 def save_assignment():
 
+
+
     if "user_id" not in session:
+
         return redirect("/login")
+
+
 
     subject_id = request.args.get("subject_id", type=int)
 
+
+
     if subject_id:
+
         session["active_subject"] = subject_id
+
     else:
+
         subject_id = session.get("active_subject")
+
     active_session_id = session.get("active_session_id")
 
+
+
     if not subject_id or not active_session_id:
+
         return "ERROR: session missing"
 
+
+
     conn = get_db_connection()
 
+
+
     # Check current stage first - PREVENT BACK NAVIGATION
+
     current_stage = conn.execute("""
+
         SELECT stage
+
         FROM evaluations
+
         WHERE subject_id=? AND session_id=? AND teacher_id=?
+
         ORDER BY id DESC
+
         LIMIT 1
+
     """, (subject_id, active_session_id, session["user_id"])).fetchone()
+
+
 
     if current_stage and current_stage["stage"] != "registration_done":
+
         # If not at registration_done stage, redirect to appropriate page
+
         if current_stage["stage"] == "assignment_done":
+
             return redirect(url_for("external_marks", subject_id=subject_id))
+
         elif current_stage["stage"] in ["external_saved", "college_pending", "college_done"]:
+
             return redirect(url_for("evaluate", subject_id=subject_id))
 
+
+
     evaluation = conn.execute("""
+
         SELECT id, data_json
+
         FROM evaluations
+
         WHERE subject_id=? AND session_id=? AND teacher_id=?
+
         ORDER BY id DESC
+
         LIMIT 1
+
     """, (subject_id, active_session_id, session["user_id"])).fetchone()
 
+
+
     if not evaluation:
+
         conn.close()
+
         return redirect(f"/upload?subject_id={subject_id}")
 
+
+
     import json
+
     data = json.loads(evaluation["data_json"])
 
+
+
     if request.method == "GET":
+
         conn.close()
+
         return render_template("assignment_marks.html", data=data)
 
+
+
     # POST - Save assignment marks
+
     for student in data:
 
+
+
         roll = str(student.get("University Roll Number")).strip()
+
         status = student.get("Registered", "")
 
+
+
         # Not Enrolled students get 0 automatically
+
         if status == "Not Enrolled":
+
             student["Assignment Marks"] = 0
+
             continue
 
+
+
         # Registered and Enrolled students can have assignment marks
+
         mark = request.form.get(f"assignment_{roll}", "").strip()
 
+
+
         try:
+
             mark = float(mark)
+
             if 0 <= mark <= 25:
+
                 student["Assignment Marks"] = mark
+
             else:
+
                 student["Assignment Marks"] = 0
+
         except:
+
             student["Assignment Marks"] = 0
 
+
+
     conn.execute("""
+
         UPDATE evaluations
+
         SET data_json=?,
+
             stage='assignment_done',
+
             created_at=CURRENT_TIMESTAMP
+
         WHERE id=?
+
     """, (json.dumps(data), evaluation["id"]))
 
+
+
     conn.commit()
+
     conn.close()
 
+
+
     # Redirect with cache control headers
+
     response = redirect(url_for("external_marks", subject_id=subject_id))
+
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+
     return response
 
+
+
 @app.route("/external_marks", methods=["GET"])
+
 def external_marks():
+
     if "user_id" not in session:
+
         return redirect("/login")
+
+
 
     subject_id = request.args.get("subject_id", type=int)
 
+
+
     if subject_id:
+
         session["active_subject"] = subject_id
+
     else:
+
         subject_id = session.get("active_subject")
+
     active_session_id = session.get("active_session_id")
 
+
+
     if not subject_id or not active_session_id:
+
         return redirect("/teacher_dashboard")
 
+
+
     conn = get_db_connection()
+
     
+
     # Check current stage - PREVENT BACK NAVIGATION
+
     current_stage = conn.execute("""
+
         SELECT stage
+
         FROM evaluations
+
         WHERE subject_id=? AND session_id=? AND teacher_id=?
+
         ORDER BY id DESC
+
         LIMIT 1
+
     """, (subject_id, active_session_id, session["user_id"])).fetchone()
+
+
 
     if current_stage:
+
         if current_stage["stage"] == "registration_done":
+
             return redirect(url_for("save_assignment", subject_id=subject_id))
+
         elif current_stage["stage"] in ["external_saved", "college_pending", "college_done"]:
+
             return redirect(url_for("evaluate", subject_id=subject_id))
+
         # If at external_saved or beyond, don't allow access to external_marks
 
+
+
     evaluation = conn.execute("""
+
         SELECT data_json
+
         FROM evaluations
+
         WHERE subject_id=? AND session_id=? AND teacher_id=?
+
         ORDER BY id DESC
+
         LIMIT 1
+
     """, (subject_id, active_session_id, session["user_id"])).fetchone()
+
+
 
     conn.close()
 
+
+
     if not evaluation:
+
         return redirect(f"/upload?subject_id={subject_id}")
 
+
+
     import json
+
     data = json.loads(evaluation["data_json"]) if evaluation["data_json"] else []
+
+
 
     return render_template("external_marks.html", data=data)
 
+
+
 @app.route("/upload_subjects", methods=["GET", "POST"])
+
 def upload_subjects():
 
+
+
     if not hod_required():
+
         return redirect("/login")
+
+
 
     conn = get_db_connection()
 
+
+
     if request.method == "POST":
+
+
 
         file = request.files.get("file")
 
+
+
         if not file:
+
             return "No file uploaded"
 
+
+
         df = pd.read_excel(file)
+
         df.columns = df.columns.str.strip().str.lower()
 
+
+
         if list(df.columns) != ["subject_code", "subject_name"]:
+
             return "Invalid format. Required columns: subject_code, subject_name"
 
+
+
         for _, row in df.iterrows():
+
             code = str(row["subject_code"]).strip().upper()
+
             name = str(row["subject_name"]).strip()
 
+
+
             if code and name:
+
                 conn.execute("""
+
                     INSERT OR IGNORE INTO subjects_master
+
                     (subject_code, subject_name)
+
                     VALUES (?, ?)
+
                 """, (code, name))
 
+
+
         conn.commit()
+
         conn.close()
 
+
+
         # 🔥 Redirect to NPTEL selection
+
         return redirect("/mark_nptel_subjects")
 
+
+
     subjects = conn.execute("""
+
         SELECT *
+
         FROM subjects_master
+
         ORDER BY subject_code
+
     """).fetchall()
 
+
+
     conn.close()
 
+
+
     return render_template(
+
         "upload_subjects.html",
+
         subjects=subjects
+
     )
+
+
 
 @app.route("/mark_nptel_subjects")
+
 def mark_nptel_subjects():
+
     if not hod_required():
+
         return redirect("/login")
 
+
+
     session_id = session["active_session_id"]
+
     hod_id = session["user_id"]
+
     
+
     conn = get_db_connection()
 
+
+
     subjects = conn.execute("""
+
         SELECT 
+
             sm.id,
+
             sm.subject_code,
+
             sm.subject_name,
+
             CASE 
+
                 WHEN EXISTS (
+
                     SELECT 1 
+
                     FROM nptel_subject_mapping nm
+
                     WHERE nm.subject_id = sm.id
+
                     AND nm.session_id = ?
+
                 ) 
+
                 THEN 1 ELSE 0
+
             END AS selected
+
         FROM subjects_master sm
+
         WHERE sm.hod_id = ?
+
         ORDER BY sm.subject_code
+
     """, (session_id, hod_id)).fetchall()
+
+
 
     conn.close()
 
+
+
     return render_template(
+
         "mark_nptel_subjects.html",
+
         subjects=subjects
+
     )
+
    
+
 @app.route("/map_nptel_subjects", methods=["GET", "POST"])
+
 def map_nptel_subjects():
 
+
+
     if not hod_required():
+
         return redirect("/login")
 
+
+
     session_id = session["active_session_id"]
+
     conn = get_db_connection()
 
+
+
     # =========================
+
     # POST → Save Mapping
+
     # =========================
+
     if request.method == "POST":
+
+
 
         subject_ids = request.form.getlist("subject_id[]")
 
+
+
         for sid in subject_ids:
 
+
+
             branches = request.form.getlist(f"branches_{sid}")
+
             semester = request.form.get(f"semester_{sid}")
 
+
+
             # Get subject code
+
             subject = conn.execute("""
+
                 SELECT subject_code
+
                 FROM subjects_master
+
                 WHERE id=?
+
             """, (sid,)).fetchone()
 
+
+
             if not subject:
+
                 continue
+
+
 
             subject_code = subject["subject_code"]
 
+
+
             # 🔴 Remove assignments for branches that are no longer mapped
+
             if branches:
+
+
 
                 placeholders = ",".join(["?"] * len(branches))
 
+
+
                 conn.execute(f"""
+
                     DELETE FROM subjects
+
                     WHERE subject_code = ?
+
                     AND session_id = ?
+
                     AND branch NOT IN ({placeholders})
+
                 """, [subject_code, session_id, *branches])
+
+
 
             else:
 
+
+
                 # If all branches removed → delete all assignments
+
                 conn.execute("""
+
                     DELETE FROM subjects
+
                     WHERE subject_code = ?
+
                     AND session_id = ?
+
                 """, (subject_code, session_id))
 
+
+
             # 🔴 Remove old mapping
+
             conn.execute("""
+
                 DELETE FROM nptel_subject_mapping
+
                 WHERE subject_id = ?
+
                 AND session_id = ?
+
             """, (sid, session_id))
 
+
+
             # 🟢 Insert new mapping
+
             for branch in branches:
+
                 conn.execute("""
+
                     INSERT INTO nptel_subject_mapping
+
                     (subject_id, branch, semester, session_id)
+
                     VALUES (?, ?, ?, ?)
+
                 """, (sid, branch, semester, session_id))
 
+
+
         conn.commit()
+
         conn.close()
+
+
 
         return redirect("/manage_subjects")
 
+
+
     # =========================
+
     # GET → Load Subjects
+
     # =========================
+
+
 
     subjects = conn.execute("""
+
     SELECT DISTINCT sm.id, sm.subject_code, sm.subject_name
+
     FROM subjects_master sm
+
     LEFT JOIN nptel_subject_mapping nm
+
         ON sm.id = nm.subject_id
+
         AND nm.session_id = ?
+
     WHERE nm.subject_id IS NOT NULL
+
     ORDER BY sm.subject_code
+
 """, (session_id,)).fetchall()
 
+
+
     # Load previous mappings
+
     rows = conn.execute("""
+
     SELECT subject_id, branch, semester
+
     FROM nptel_subject_mapping
+
     WHERE session_id = ?
+
 """, (session_id,)).fetchall()
+
+
 
     mapping = {}
 
+
+
     for r in rows:
+
+
 
         sid = int(r["subject_id"])
 
+
+
         if sid not in mapping:
+
             mapping[sid] = {
+
                 "branches": set(),
+
                 "semester": r["semester"]
+
             }
+
+
 
         mapping[sid]["branches"].add(r["branch"])
 
+
+
     # convert sets to lists (for Jinja)
+
     for sid in mapping:
+
         mapping[sid]["branches"] = list(mapping[sid]["branches"])
 
+
+
     # Load branches
+
     branches = conn.execute("""
+
         SELECT name
+
         FROM branches
+
         WHERE hod_id = ?
+
     """, (session["user_id"],)).fetchall()
 
+
+
     # Semester options
+
     session_label = session.get("session_label", "").lower()
 
+
+
     if "jan" in session_label or "may" in session_label:
+
         allowed_semesters = [2, 4, 6, 8]
+
     else:
+
         allowed_semesters = [1, 3, 5, 7]
+
+
 
     conn.close()
 
+
+
     return render_template(
+
         "map_nptel_subjects.html",
+
         subjects=subjects,
+
         branches=branches,
+
         allowed_semesters=allowed_semesters,
+
         mapping=mapping
+
     )
 
+
+
 @app.route("/save_nptel_subjects", methods=["POST"])
+
 def save_nptel_subjects():
+
     if not hod_required():
+
         return redirect("/login")
 
+
+
     session_id = session["active_session_id"]
+
     hod_id = session["user_id"]
+
     selected_subjects = request.form.getlist("nptel_subjects")
+
+
 
     conn = get_db_connection()
 
+
+
     # 🔹 Get currently stored subjects for this HOD
+
     existing = conn.execute("""
+
         SELECT DISTINCT nm.subject_id
+
         FROM nptel_subject_mapping nm
+
         JOIN subjects_master sm ON nm.subject_id = sm.id
+
         WHERE nm.session_id = ? AND sm.hod_id = ?
+
     """, (session_id, hod_id)).fetchall()
 
+
+
     existing_ids = {str(row["subject_id"]) for row in existing}
+
     selected_ids = set(selected_subjects)
 
+
+
     # Remove subjects that were unchecked
+
     to_delete = existing_ids - selected_ids
+
     for sid in to_delete:
+
         conn.execute("""
+
             DELETE FROM nptel_subject_mapping
+
             WHERE subject_id = ? AND session_id = ?
+
         """, (sid, session_id))
+
+
 
     # Add new selected subjects
+
     to_add = selected_ids - existing_ids
+
     for sid in to_add:
+
         conn.execute("""
+
             INSERT INTO nptel_subject_mapping
+
             (subject_id, session_id)
+
             VALUES (?, ?)
+
         """, (sid, session_id))
 
+
+
     conn.commit()
+
     conn.close()
+
+
 
     return redirect("/map_nptel_subjects")
 
 
+
+
+
 @app.route("/get_nptel_subjects")
+
 def get_nptel_subjects():
+
     branch = request.args.get("branch")
+
     semester = request.args.get("semester")
+
     session_id = session["active_session_id"]
+
+
 
     conn = get_db_connection()
 
+
+
     subjects = conn.execute("""
+
     SELECT DISTINCT
+
         sm.id,
+
         sm.subject_code,
+
         sm.subject_name
+
     FROM nptel_subject_mapping nm
+
     JOIN subjects_master sm
+
         ON sm.id = nm.subject_id
+
     WHERE nm.branch = ?
+
       AND nm.semester = ?
+
       AND nm.session_id = ?
+
     ORDER BY sm.subject_code
+
 """, (branch, semester, session["active_session_id"])).fetchall()
+
+
 
     conn.close()
 
+
+
     return jsonify([
+
         {
+
             "id": s["id"],
+
             "label": f'{s["subject_code"]} - {s["subject_name"]}'
+
         }
+
         for s in subjects
+
     ])
 
 
+
+
+
 @app.route("/get_available_sections")
+
 def get_available_sections():
 
+
+
     branch = request.args.get("branch")
+
     semester = request.args.get("semester")
+
     subject_id = request.args.get("subject_id")
 
+
+
     if not branch or not semester or not subject_id:
+
         return jsonify([])
+
+
 
     conn = get_db_connection()
 
+
+
     subject = conn.execute("""
+
         SELECT subject_code
+
         FROM subjects_master
+
         WHERE id=?
+
     """, (subject_id,)).fetchone()
 
+
+
     if not subject:
+
         conn.close()
+
         return jsonify([])
+
+
 
     subject_code = subject["subject_code"]
 
+
+
     assigned = conn.execute("""
+
         SELECT section
+
         FROM subjects
+
         WHERE branch = ?
+
         AND semester = ?
+
         AND subject_code = ?
+
         AND session_id = ?
+
     """, (
+
         branch,
+
         semester,
+
         subject_code,
+
         session["active_session_id"]
+
     )).fetchall()
+
+
 
     assigned_sections = {row["section"] for row in assigned}
 
+
+
     all_sections = {"1", "2", "3"}
+
     available_sections = sorted(all_sections - assigned_sections)
 
+
+
     conn.close()
+
+
 
     return jsonify(available_sections)
 
+
+
 @app.route("/evaluate")
+
 def evaluate():
+
     if "user_id" not in session:
+
         return redirect("/login")
+
+
 
     subject_id = request.args.get("subject_id", type=int)
 
+
+
     if subject_id:
+
         session["active_subject"] = subject_id
+
     else:
+
         subject_id = session.get("active_subject")
+
         
+
     active_session_id = session.get("active_session_id")
 
+
+
     if not subject_id or not active_session_id:
+
         return redirect("/teacher_dashboard")
+
+
 
     conn = get_db_connection()
 
+
+
     evaluation = conn.execute("""
+
         SELECT *
+
         FROM evaluations
+
         WHERE subject_id=? AND session_id=? AND teacher_id=?
+
         ORDER BY id DESC
+
         LIMIT 1
+
     """, (subject_id, active_session_id, session["user_id"])).fetchone()
 
+
+
     if not evaluation:
+
         conn.close()
+
         return redirect(f"/upload?subject_id={subject_id}")
 
+
+
     import json
+
     data = json.loads(evaluation["data_json"]) if evaluation["data_json"] else []
 
+
+
     final_list = []      # ALL students go here after college marks are saved
+
     college_list = []     # Only for students who haven't taken college exam yet
 
+
+
     for student in data:
+
         # Re-evaluate using unified function to ensure consistency
+
         result = calculate_final_results(student)
+
         student.update(result)
+
         
+
         # Check if college marks have been entered
+
         college_marks_entered = student.get("College_External_Raw") not in [None, "", "NA"]
+
         
+
         # If college marks have been entered, they belong in final_list
+
         if college_marks_entered or student.get("Track") in ["College Evaluated", "NPTEL"]:
+
             final_list.append(student)
+
         else:
+
             college_list.append(student)
 
+
+
     # Determine stage based on college_list
+
     stage_value = "college_done" if len(college_list) == 0 else "college_pending"
 
+
+
     # Update database
+
     conn.execute("""
+
         UPDATE evaluations
+
         SET data_json=?,
+
             stage=?,
+
             created_at=CURRENT_TIMESTAMP
+
         WHERE id=?
+
     """, (
+
         json.dumps(data),
+
         stage_value,
+
         evaluation["id"]
+
     ))
+
+
 
     conn.commit()
 
+
+
     # Check unlock status
+
     unlocked_count = conn.execute("""
+
         SELECT COUNT(*) as total
+
         FROM evaluation_records
+
         WHERE evaluation_id=? AND locked=0
+
     """, (evaluation["id"],)).fetchone()["total"]
 
+
+
     can_download = (
+
         evaluation["locked"] == 1
+
         and unlocked_count == 0
+
         and stage_value == "college_done"
+
     )
 
+
+
     # Check if we should show edit button
+
     can_edit_college = (
+
         stage_value == "college_pending" 
+
         and not evaluation["locked"] 
+
         and session.get("role") == "TEACHER"
+
     )
+
+
 
     conn.close()
 
+
+
     return render_template(
+
         "result.html",
+
         final_list=final_list,      # ALL students with results
+
         college_list=college_list,   # Students needing college exam (empty after college marks)
+
         stage=stage_value,
+
         evaluation_locked=(evaluation["locked"] == 1),
+
         unlocked_count=unlocked_count,
+
         can_download=can_download,
+
         evaluation_id=evaluation["id"],
+
         can_edit_college=can_edit_college
+
     )
 
+
+
 @app.route("/upload/basic", methods=["POST"])
+
 def upload_basic():
+
     """Upload basic student details including father's name"""
+
     if "user_id" not in session:
+
         return redirect("/login")
+
     
+
     subject_id = session.get("active_subject")
+
     if not subject_id:
+
         return "ERROR: active_subject missing in session"
 
+
+
     file = request.files.get("file")
+
     if not file:
+
         return "No file uploaded"
 
+
+
     filename = file.filename.lower()
+
     if filename.endswith(".xlsx"):
+
         df = pd.read_excel(file, engine="openpyxl")
+
     elif filename.endswith(".csv"):
+
         df = pd.read_csv(file)
+
     else:
+
         return "Unsupported file format"
 
+
+
     df.columns = df.columns.str.strip().str.lower()
+
     
+
     # Basic upload now requires 4 columns including father's name
+
     required_cols = ["sno", "university roll number", "student name", "father's name"]
+
     
+
     # Check if all required columns exist
+
     missing_cols = [col for col in required_cols if col not in df.columns]
+
     if missing_cols:
+
         return f"Missing columns: {', '.join(missing_cols)}"
+
     
+
+    # Check for duplicate roll numbers
+
+    roll_numbers = df["university roll number"].astype(str).str.strip()
+
+    duplicate_rolls = roll_numbers[roll_numbers.duplicated()].tolist()
+
+    
+
+    if duplicate_rolls:
+
+        return f"Duplicate roll numbers found: {', '.join(duplicate_rolls)}. Please remove duplicates and upload again."
+
+    
+
     students = []
+
+    seen_rolls = set()
+
     for _, row in df.iterrows():
+
+        roll_no = str(row["university roll number"]).strip()
+
+        if roll_no in seen_rolls:
+
+            continue  # Skip duplicates
+
+        seen_rolls.add(roll_no)
+
+        
+
         students.append({
+
             "SNo": row["sno"],
-            "University Roll Number": str(row["university roll number"]).strip(),
+
+            "University Roll Number": roll_no,
+
             "Student Name": row["student name"],
+
             "Father's Name": str(row["father's name"]).strip(),
+
             "Registered": "Registered",  # Default
+
             "Assignment Marks": "",
+
             "NPTEL External Marks": ""
+
         })
+
     
+
     # Store in global for next steps
+
     global ORIGINAL_DATA
+
     ORIGINAL_DATA = students
+
     
+
     return render_template("registration_preview.html", data=students, upload_type="basic")
 
 
+
+
+
 @app.route("/upload/full", methods=["POST"])
+
 def upload_full():
+
     """Upload complete student data with all fields"""
+
     if "user_id" not in session:
+
         return redirect("/login")
+
     
+
     subject_id = session.get("active_subject")
+
     if not subject_id:
+
         return "ERROR: active_subject missing in session"
 
+
+
     file = request.files.get("file")
+
     if not file:
+
         return "No file uploaded"
 
+
+
     filename = file.filename.lower()
+
     if filename.endswith(".xlsx"):
+
         df = pd.read_excel(file, engine="openpyxl")
+
     elif filename.endswith(".csv"):
+
         df = pd.read_csv(file)
+
     else:
+
         return "Unsupported file format"
 
+
+
     df.columns = df.columns.str.strip().str.lower()
+
     
+
     required_cols = ["sno", "university roll number", "student name", "father's name", 
+
                     "registration status", "assignment marks", "external marks"]
+
     
+
     # Check if all required columns exist
+
     missing_cols = [col for col in required_cols if col not in df.columns]
+
     if missing_cols:
+
         return f"Missing columns: {', '.join(missing_cols)}"
+
     
+
     students = []
+
     for _, row in df.iterrows():
+
         # Standardize status: convert to lowercase then capitalize first letter
+
         status_raw = str(row["registration status"]).strip().lower()
+
         if status_raw == "registered":
+
             status = "Registered"
+
         elif status_raw == "enrolled":
+
             status = "Enrolled"
+
         elif status_raw == "not enrolled":
+
             status = "Not Enrolled"
+
         else:
+
             status = "Registered"  # Default
+
         
+
         # Get marks, handle empty values
+
         assignment = row["assignment marks"] if pd.notna(row["assignment marks"]) else ""
+
         external = row["external marks"] if pd.notna(row["external marks"]) else ""
+
         
+
         students.append({
+
             "SNo": row["sno"],
+
             "University Roll Number": str(row["university roll number"]).strip(),
+
             "Student Name": row["student name"],
+
             "Father's Name": str(row["father's name"]).strip(),
+
             "Registered": status,
+
             "Assignment Marks": assignment,
+
             "NPTEL External Marks": external
+
         })
+
     
+
     # Store in global for next steps
+
     global ORIGINAL_DATA
+
     ORIGINAL_DATA = students
+
     
+
     return render_template("registration_preview.html", data=students, upload_type="full")
 
+
+
 @app.route("/reset_evaluation/<int:subject_id>", methods=["POST"])
+
 def reset_evaluation(subject_id):
 
+
+
     if "user_id" not in session or session["role"] != "TEACHER":
+
         return redirect("/login")
+
+
 
     active_session_id = session.get("active_session_id")
 
+
+
     conn = get_db_connection()
 
+
+
     evaluation = conn.execute("""
+
         SELECT id, locked
+
         FROM evaluations
+
         WHERE subject_id=? AND session_id=? AND teacher_id=?
+
         ORDER BY id DESC
+
         LIMIT 1
+
     """, (subject_id, active_session_id, session["user_id"])).fetchone()
 
+
+
     if not evaluation:
+
         conn.close()
+
         return redirect("/teacher_dashboard")
 
+
+
     # 🚫 Safety: Don't allow reset if locked
+
     if evaluation["locked"] == 1:
+
         conn.close()
+
         flash("Cannot reset. Evaluation is locked.", "danger")
+
         return redirect("/teacher_dashboard")
+
+
 
     evaluation_id = evaluation["id"]
 
+
+
     # 🔥 Delete child records first
+
     conn.execute("""
+
         DELETE FROM evaluation_records
+
         WHERE evaluation_id=?
+
     """, (evaluation_id,))
+
+
 
     # 🔥 Delete evaluation row
+
     conn.execute("""
+
         DELETE FROM evaluations
+
         WHERE id=?
+
     """, (evaluation_id,))
 
+
+
     conn.commit()
+
     conn.close()
+
+
 
     return redirect("/teacher_dashboard")
 
 
+
+
+
 @app.route("/save_external_marks", methods=["POST"])
+
 def save_external_marks():
 
+
+
     if "user_id" not in session:
+
         return redirect("/login")
+
+
 
     subject_id = request.args.get("subject_id", type=int)
 
+
+
     if subject_id:
+
         session["active_subject"] = subject_id
+
     else:
+
         subject_id = session.get("active_subject")
+
+
 
     active_session_id = session.get("active_session_id")
 
+
+
     if not subject_id or not active_session_id:
+
         return redirect("/teacher_dashboard")
+
+
 
     conn = get_db_connection()
 
+
+
     evaluation = conn.execute("""
+
         SELECT id, data_json
+
         FROM evaluations
+
         WHERE subject_id=? AND session_id=? AND teacher_id=?
+
         ORDER BY id DESC
+
         LIMIT 1
+
     """, (subject_id, active_session_id, session["user_id"])).fetchone()
 
+
+
     if not evaluation:
+
         conn.close()
+
         return redirect(f"/upload?subject_id={subject_id}")
 
+
+
     import json
+
     data = json.loads(evaluation["data_json"]) if evaluation["data_json"] else []
+
+
 
     for student in data:
 
+
+
         roll = str(student.get("University Roll Number", "")).strip()
+
         status = student.get("Registered", "")
+
         
+
         # Skip non-Registered students
+
         if status != "Registered":
+
             continue
 
+
+
         status_value = request.form.get(f"status_{roll}", "Present")
+
         
+
         if status_value == "Absent":
+
             student["NPTEL External Marks"] = "Absent"
+
             student["Attendance"] = "Absent"
+
         else:
+
             mark_input = request.form.get(f"external_{roll}", "").strip()
+
             try:
+
                 mark = float(mark_input)
+
                 student["NPTEL External Marks"] = mark if 0 <= mark <= 75 else 0
+
             except:
+
                 student["NPTEL External Marks"] = 0
+
             student["Attendance"] = "Present"
+
         
+
         # Re-evaluate using unified function
+
         result = calculate_final_results(student)
+
         student.update(result)
 
+
+
     conn.execute("""
+
         UPDATE evaluations
+
         SET data_json=?,
+
             stage='external_saved',
+
             created_at=CURRENT_TIMESTAMP
+
         WHERE id=?
+
     """, (json.dumps(data), evaluation["id"]))
 
+
+
     conn.commit()
+
     conn.close()
 
+
+
     # Redirect with cache control headers
+
     response = redirect(url_for("evaluate", subject_id=subject_id))
+
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+
     return response
+
+
 
 import json
 
+
+
 @app.route("/final_results")
+
 def final_results():
+
     if "user_id" not in session:
+
         return redirect("/login")
 
+
+
     subject_id = session.get("active_subject")
+
     active_session_id = session.get("active_session_id")
+
+
 
     conn = get_db_connection()
 
+
+
     evaluation = conn.execute("""
+
         SELECT *
+
         FROM evaluations
+
         WHERE subject_id=? AND session_id=? AND teacher_id=?
+
         ORDER BY id DESC
+
         LIMIT 1
+
     """, (subject_id, active_session_id, session["user_id"])).fetchone()
 
+
+
     if not evaluation:
+
         conn.close()
+
         return redirect("/teacher_dashboard")
 
+
+
     import json
+
     data = json.loads(evaluation["data_json"])
 
+
+
     final_list = []
+
     college_pending = []
 
+
+
     for student in data:
+
         if student.get("Track") in ["College Evaluated", "NPTEL"]:
+
             final_list.append(student)
+
         elif student.get("Track") == "College":
+
             college_pending.append(student)
+
+
 
     stage_value = "college_done" if len(college_pending) == 0 else "college_pending"
 
+
+
     conn.close()
 
+
+
     return render_template(
+
         "result.html",
+
         data=final_list,
+
         college_list=college_pending,
+
         stage=stage_value,
+
         evaluation_locked=(evaluation["locked"] == 1),
+
         unlocked_count=0,
+
         can_download=False,
+
         evaluation_id=evaluation["id"]
+
     )
+
+
+
+
+
 
 
 
 
 @app.route("/download_pdf/<int:eval_id>")
+
 def download_pdf(eval_id):
 
+
+
     if "user_id" not in session:
+
         return redirect("/login")
+
+
 
     conn = get_db_connection()
 
+
+
     evaluation = conn.execute("""
+
         SELECT *
+
         FROM evaluations
+
         WHERE id=?
+
     """, (eval_id,)).fetchone()
 
+
+
     if not evaluation:
+
         conn.close()
+
         return "Evaluation not found."
 
+
+
     # Get subject details
+
     subject = conn.execute("""
+
         SELECT * FROM subjects WHERE id=?
+
     """, (evaluation["subject_id"],)).fetchone()
 
+
+
     # Get teacher and department info
+
     teacher_id = session.get("user_id")
+
     teacher = conn.execute("SELECT * FROM teachers WHERE id=?", (teacher_id,)).fetchone()
 
+
+
     hod = None
+
     department = "Computer Science & Engineering"
 
+
+
     if teacher:
+
         hod = conn.execute(
+
             "SELECT * FROM hods WHERE id=?", 
+
             (teacher["hod_id"],)
+
         ).fetchone()
 
+
+
         if hod:
+
             department = hod["department"]
 
+
+
     # 🔵 Count unlocked students
+
     unlocked_count = conn.execute("""
+
         SELECT COUNT(*) as total
+
         FROM evaluation_records
+
         WHERE evaluation_id=? AND locked=0
+
     """, (eval_id,)).fetchone()["total"]
+
+
 
     conn.close()
 
+
+
     # 🔒 Allow only if fully locked AND no partial unlock
+
     if evaluation["locked"] != 1 or unlocked_count > 0:
+
         return "Result must be fully locked before download."
 
+
+
     import json
+
     data = json.loads(evaluation["data_json"])
 
+
+
     from reportlab.platypus import SimpleDocTemplate, Table, Paragraph, Spacer, Image
+
     from reportlab.lib import colors
+
     from reportlab.lib.pagesizes import A4
+
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+
     from reportlab.lib.units import inch
+
     from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+
     from datetime import datetime
+
     import io
 
+
+
     buffer = io.BytesIO()
+
     doc = SimpleDocTemplate(
+
         buffer,
+
         pagesize=A4,
+
         topMargin=0.5*inch,
+
         bottomMargin=0.5*inch,
+
         leftMargin=0.5*inch,
+
         rightMargin=0.5*inch
+
     )
+
     elements = []
+
+
 
     styles = getSampleStyleSheet()
 
+
+
     # ⭐ TOTAL USABLE PAGE WIDTH
+
     PAGE_WIDTH = doc.width
 
+
+
     # Custom styles
+
     header_left = ParagraphStyle(
+
         'HeaderLeft',
+
         parent=styles['Normal'],
+
         fontSize=10,
+
         alignment=TA_LEFT
+
     )
+
+
 
     header_center = ParagraphStyle(
+
         'HeaderCenter',
+
         parent=styles['Normal'],
+
         fontSize=16,
+
         alignment=TA_CENTER,
+
         fontName='Helvetica-Bold'
+
     )
+
+
 
     header_right = ParagraphStyle(
+
         'HeaderRight',
+
         parent=styles['Normal'],
+
         fontSize=12,
+
         alignment=TA_CENTER,
+
         fontName='Helvetica-Bold',
+
         leading=14
+
     )
+
+
 
     # ================= HEADER TABLE =================
+
     header_data = [[
+
         "",
+
         Paragraph("FINAL RESULT SHEET", header_center),
+
         Paragraph(f"Department of<br/>{department}", header_right)
+
     ]]
 
+
+
     header_table = Table(
+
         header_data,
+
         colWidths=[
+
             PAGE_WIDTH * 0.25,
+
             PAGE_WIDTH * 0.5,
+
             PAGE_WIDTH * 0.25
+
         ]
+
     )
+
+
 
     header_table.setStyle([
+
         ('ALIGN',(0,0),(0,0),'CENTER'),
+
         ('ALIGN',(1,0),(1,0),'CENTER'),
+
         ('ALIGN',(2,0),(2,0),'CENTER'),
+
         ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+
         ('BOX',(0,0),(-1,-1),1,colors.black),
+
         ('GRID',(0,0),(-1,-1),0.5,colors.black),
+
         ('LEFTPADDING',(0,0),(-1,-1),6),
+
         ('RIGHTPADDING',(0,0),(-1,-1),6),
+
         ('TOPPADDING',(0,0),(-1,-1),8),
+
         ('BOTTOMPADDING',(0,0),(-1,-1),8),
+
     ])
+
+
 
     try:
+
         logo = Image('static/agc_logo.png', width=1.5*inch, height=0.8*inch)
+
         logo.hAlign = TA_CENTER
+
         header_table._cellvalues[0][0] = logo
+
     except:
+
         header_table._cellvalues[0][0] = Paragraph("COLLEGE LOGO", header_left)
 
+
+
     elements.append(header_table)
+
     elements.append(Spacer(1, 0.2*inch))
+
     current_date = datetime.now().strftime("%d-%m-%Y")
 
+
+
     # ================= SUBJECT DETAILS =================
+
     if subject:
+
         details_data = [
+
             [
+
                 Paragraph(f"<b>Subject Code:</b> {subject['subject_code']}", styles['Normal']),
+
                 Paragraph(f"<b>Subject Name:</b> {subject['subject_name']}", styles['Normal'])
+
             ],
+
             [
+
                 Paragraph(f"<b>Branch:</b> {subject['branch']}", styles['Normal']),
+
                 Paragraph(f"<b>Semester:</b> {subject['semester']}", styles['Normal'])
+
             ],
+
             [
+
                 Paragraph(f"<b>Section:</b> {subject['section']}", styles['Normal']),
+
                 Paragraph(f"<b>Date:</b> {current_date}", styles['Normal'])
+
             ]
+
         ]
+
+
 
         details_table = Table(
+
             details_data,
+
             colWidths=[PAGE_WIDTH/2, PAGE_WIDTH/2]
+
         )
 
+
+
         details_table.setStyle([
+
             ('ALIGN',(0,0),(-1,-1),'LEFT'),
+
             ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+
             ('LEFTPADDING',(0,0),(-1,-1),2),
+
             ('RIGHTPADDING',(0,0),(-1,-1),2),
+
             ('TOPPADDING',(0,0),(-1,-1),2),
+
             ('BOTTOMPADDING',(0,0),(-1,-1),2),
+
             ('FONTSIZE',(0,0),(-1,-1),11),
+
         ])
+
+
 
         elements.append(details_table)
+
         elements.append(Spacer(1, 0.2*inch))
 
+
+
     # ================= SIMPLIFIED RESULTS TABLE =================
+
     # Table headers - only S.No, Roll No, Name, Internal, External, Result
+
     table_data = [["S.No", "Roll No", "Student Name", "Internal", "External", "Result"]]
 
+
+
     for idx, s in enumerate(data, start=1):
+
         # Check if student was absent in any exam
+
         nptel_absent = s.get("NPTEL External Marks") == "Absent"
+
         college_absent = s.get("College_External_Raw") == "Absent" or s.get("External_Final") == "Absent"
+
         is_absent = nptel_absent or college_absent
+
+
 
         # Internal
+
         internal = s.get("Internal_Final", 0)
+
         if internal in ["", None, "-"]:
+
             internal_display = "0"
+
         else:
+
             internal_display = str(internal)
 
+
+
         # External
+
         external = s.get("External_Final", "")
 
+
+
         if external in ["", None, "-"]:
+
             external_display = "0"
+
         elif str(external).upper() == "ABSENT":
+
             external_display = "Absent"
+
         else:
+
             external_display = str(external)
 
+
+
         # Check if student was absent in any exam
+
         nptel_absent = s.get("NPTEL External Marks") == "Absent"
+
         college_absent = s.get("College_External_Raw") == "Absent" or s.get("External_Final") == "Absent"
+
         is_absent = nptel_absent or college_absent
 
+
+
         # Result
+
         if is_absent:
+
             result_display = "FAIL"
+
         elif s.get("Result") == "PASS":
+
             result_display = "PASS"
+
         else:
+
             result_display = "FAIL"
+
+
 
         table_data.append([
+
             str(idx),
+
             str(s.get("University Roll Number", "")),
+
             str(s.get("Student Name", "")),
+
             internal_display,
+
             external_display,
+
             result_display
+
         ])
 
+
+
     # Calculate column widths to match header width (PAGE_WIDTH)
+
     results_table = Table(
+
         table_data,
+
         colWidths=[
+
             PAGE_WIDTH * 0.08,
+
             PAGE_WIDTH * 0.15,
+
             PAGE_WIDTH * 0.35,
+
             PAGE_WIDTH * 0.14,
+
             PAGE_WIDTH * 0.14,
+
             PAGE_WIDTH * 0.14
+
         ]
+
     )
 
+
+
     results_table.setStyle([
+
         ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
+
         ('BOX', (0, 0), (-1, -1), 1, colors.black),
+
         ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
+
         ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+
         ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+
         ('FONTSIZE', (0, 0), (-1, 0), 11),
+
         ('FONTSIZE', (0, 1), (-1, -1), 10),
+
         ('LEFTPADDING', (0, 0), (-1, -1), 4),
+
         ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+
         ('TOPPADDING', (0, 0), (-1, -1), 6),
+
         ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+
     ])
+
+
 
     elements.append(results_table)
 
+
+
     doc.build(elements)
 
+
+
     buffer.seek(0)
+
     return send_file(
+
         buffer,
+
         as_attachment=True,
+
         download_name=f"result_{subject['subject_code'] if subject else 'result'}.pdf"
+
     )
 
+
+
 @app.route("/save_college_marks", methods=["POST"])
+
 def save_college_marks():
 
+
+
     if "user_id" not in session:
+
         return redirect("/login")
+
+
 
     subject_id = request.args.get("subject_id", type=int)
 
+
+
     if subject_id:
+
         session["active_subject"] = subject_id
+
     else:
+
         subject_id = session.get("active_subject")
+
+
 
     active_session_id = session.get("active_session_id")
 
+
+
     if not subject_id or not active_session_id:
+
         return redirect("/teacher_dashboard")
+
+
 
     conn = get_db_connection()
+
     
+
     # Check if evaluation is locked before processing
+
     check_lock = conn.execute("""
+
         SELECT locked, stage
+
         FROM evaluations
+
         WHERE subject_id=? AND session_id=? AND teacher_id=?
+
         ORDER BY id DESC
+
         LIMIT 1
+
     """, (subject_id, active_session_id, session["user_id"])).fetchone()
+
     
+
     if check_lock and check_lock["locked"] == 1:
+
         conn.close()
+
         flash("Cannot save. Marks are locked.", "danger")
+
         return redirect(f"/evaluate?subject_id={subject_id}")
 
+
+
     evaluation = conn.execute("""
+
         SELECT id, data_json
+
         FROM evaluations
+
         WHERE subject_id=? AND session_id=? AND teacher_id=?
+
         ORDER BY id DESC
+
         LIMIT 1
+
     """, (subject_id, active_session_id, session["user_id"])).fetchone()
 
+
+
     if not evaluation:
+
         conn.close()
+
         return redirect("/teacher_dashboard")
 
+
+
     import json
+
     data = json.loads(evaluation["data_json"])
 
+
+
     for student in data:
+
         # Only process students who are in the form (have college marks)
+
         roll = str(student["University Roll Number"]).strip()
+
         status = request.form.get(f"status_{roll}")
+
         
+
         # Skip if this student wasn't in the form
+
         if status is None:
+
             continue
+
+
 
         value = request.form.get(f"external_{roll}", "").strip()
 
+
+
         # Handle ABSENT in college exam
+
         if status.upper() == "ABSENT":
+
             student["College_External_Raw"] = "ABSENT"
+
         else:
+
             try:
+
                 college_external = float(value)
+
                 if 0 <= college_external <= 60:
+
                     student["College_External_Raw"] = college_external
+
             except:
+
                 continue
+
         
+
         # SINGLE LINE - Re-evaluate using unified function
+
         result = calculate_final_results(student)
+
         student.update(result)
 
+
+
     # AFTER SAVING COLLEGE MARKS, ALL STUDENTS GO TO FINAL RESULTS
+
     stage_value = "college_done"
 
+
+
     conn.execute("""
+
         UPDATE evaluations
+
         SET data_json=?,
+
             stage=?,
+
             created_at=CURRENT_TIMESTAMP
+
         WHERE id=?
+
     """, (json.dumps(data), stage_value, evaluation["id"]))
 
+
+
     conn.commit()
+
     conn.close()
+
+
 
     return redirect(url_for("evaluate", subject_id=subject_id))
 
+
+
 @app.route("/download_college_list/<int:eval_id>")
+
 def download_college_list(eval_id):
 
+
+
     if "user_id" not in session:
+
         return redirect("/login")
 
+
+
     conn = get_db_connection()
+
     evaluation = conn.execute("""
+
         SELECT data_json
+
         FROM evaluations
+
         WHERE id=?
+
     """, (eval_id,)).fetchone()
+
+
 
     conn.close()
 
+
+
     if not evaluation:
+
         return "Evaluation not found."
 
+
+
     import json
+
     data = json.loads(evaluation["data_json"])
 
+    
+
     college_students = [
+
         s for s in data
-        if s.get("Track") in ["College", "College Evaluated"]
+
+        if s.get("Track") in ["College", "College Evaluated"] 
+
+        and s.get("College_External_Raw") not in [None, "", "NA"]
+
     ]
 
+    
+
     if not college_students:
+
         return "No college exam students available."
+
+
 
     df = pd.DataFrame(college_students)
 
+
+
     buffer = io.BytesIO()
+
     df.to_excel(buffer, index=False)
+
     buffer.seek(0)
 
+
+
     return send_file(
+
         buffer,
+
         as_attachment=True,
+
         download_name="college_exam_students.xlsx"
+
     )
 
+
+
 @app.route("/login", methods=["GET", "POST"])
+
 def login():
 
+
+
     error = None
+
     email = ""
+
     selected_role = ""
+
+
 
     if request.method == "POST":
 
+
+
         email = request.form["email"].strip().lower()
+
         password = request.form["password"]
+
         selected_role = request.form.get("role")
 
+
+
         # 🔵 Session selected from login page
+
         session_label = request.form.get("session_label")
 
+
+
         if session_label:
+
             session["session_label"] = session_label
+
             session["active_session_id"] = get_or_create_session(session_label)
+
+
 
         conn = get_db_connection()
 
+
+
         teacher = conn.execute(
+
             "SELECT * FROM teachers WHERE email=?",
+
             (email,)
+
         ).fetchone()
 
+
+
         hod = conn.execute(
+
             "SELECT * FROM hods WHERE email=?",
+
             (email,)
+
         ).fetchone()
+
+
 
         conn.close()
 
+
+
         # =========================
+
         # 🔴 TEACHER LOGIN
+
         # =========================
+
         if selected_role == "TEACHER":
+
+
 
             if teacher and check_password_hash(teacher["password"], password):
 
+
+
                 # Block deactivated teacher
+
                 if teacher["is_deactivated"] == 1:
+
                     error = "Your account is deactivated. Contact HOD."
+
                 else:
+
                     session["user_id"] = teacher["id"]
+
                     session["role"] = "TEACHER"
+
                     session["is_super_admin"] = False
+
                     session.permanent = True
 
+
+
                     if teacher["is_active"] == 0:
+
                         return redirect("/change_password")
+
+
 
                     return redirect("/teacher_dashboard")
 
+
+
             else:
+
                 error = "Invalid email or password"
 
+
+
         # =========================
+
         # 🔵 ADMIN LOGIN
+
         # =========================
+
         elif selected_role == "ADMIN":
 
+
+
             # Teacher promoted to Admin
+
             if teacher and teacher["is_admin"] == 1 and check_password_hash(teacher["password"], password):
 
+
+
                 if teacher["is_deactivated"] == 1:
+
                     error = "Your account is deactivated. Contact HOD."
+
                 else:
+
                     session["user_id"] = teacher["id"]
+
                     session["role"] = "HOD"
+
                     session["is_super_admin"] = False
+
                     session.permanent = True
 
+
+
                     if teacher["is_active"] == 0:
+
                         return redirect("/change_password")
+
+
 
                     return redirect("/hod_dashboard")
 
+
+
             # Real HOD (Super Admin)
+
             elif hod and check_password_hash(hod["password"], password):
 
+
+
                 session["user_id"] = hod["id"]
+
                 session["role"] = "HOD"
+
                 session["is_super_admin"] = True
+
                 session.permanent = True
 
+
+
                 if hod["is_active"] == 0:
+
                     return redirect("/change_password")
+
+
 
                 return redirect("/hod_dashboard")
 
+
+
             else:
+
                 error = "Invalid email or password"
 
+
+
         else:
+
             error = "Please select your role."
 
+
+
     # 🔵 Always send sessions to template
+
     return render_template(
+
         "login.html",
+
         error=error,
+
         email=email,
+
         selected_role=selected_role,
+
         all_sessions=get_all_sessions(),
+
         current_session=get_current_session()
+
     )
 
+
+
 @app.route("/check_roles")
+
 def check_roles():
+
+
 
     email = request.args.get("email")
 
+
+
     conn = get_db_connection()
 
+
+
     hod = conn.execute(
+
         "SELECT id FROM hods WHERE email=?",
+
         (email,)
+
     ).fetchone()
 
+
+
     teacher = conn.execute(
+
         "SELECT is_admin FROM teachers WHERE email=?",
+
         (email,)
+
     ).fetchone()
+
+
 
     conn.close()
 
+
+
     roles = []
 
+
+
     # 🔴 Real HOD (Super Admin)
+
     if hod:
+
         roles.append("HOD")
 
+
+
     # 🟢 Teacher
+
     if teacher:
+
         roles.append("TEACHER")
 
+
+
         # 🟡 Teacher promoted to admin
+
         if teacher["is_admin"] == 1:
+
             roles.append("ADMIN")
+
+
 
     return {"roles": roles}
 
 
+
+
+
 @app.route("/toggle_admin/<int:teacher_id>", methods=["POST"])
+
 def toggle_admin(teacher_id):
 
+
+
     if not hod_required() or not session.get("is_super_admin"):
+
         return redirect("/login")
+
+
+
 
 
     conn = get_db_connection()
 
+
+
     teacher = conn.execute(
+
         "SELECT is_admin FROM teachers WHERE id=? AND hod_id=?",
+
         (teacher_id, session["user_id"])
+
     ).fetchone()
 
+
+
     if not teacher:
+
         conn.close()
+
         return redirect("/manage_teachers")
+
+
 
     new_value = 0 if teacher["is_admin"] == 1 else 1
 
+
+
     conn.execute(
+
         "UPDATE teachers SET is_admin=? WHERE id=?",
+
         (new_value, teacher_id)
+
     )
 
+
+
     conn.commit()
+
     conn.close()
+
+
 
     return redirect("/manage_teachers")
 
 
 
+
+
+
+
 @app.route("/change_password", methods=["GET","POST"])
+
 def change_password():
 
+
+
     if "user_id" not in session:
+
         return redirect("/login")
+
+
 
     if request.method == "POST":
 
+
+
         new_pass = generate_password_hash(request.form["password"])
+
+
 
         conn = get_db_connection()
 
+
+
         if session["role"] == "HOD":
+
             conn.execute(
+
                 "UPDATE hods SET password=?, is_active=1 WHERE id=?",
+
                 (new_pass, session["user_id"])
+
             )
+
         else:
+
             conn.execute(
+
                 "UPDATE teachers SET password=?, is_active=1 WHERE id=?",
+
                 (new_pass, session["user_id"])
+
             )
+
+
 
         conn.commit()
+
         conn.close()
 
+
+
         return redirect("/login")
+
+
 
     return render_template("change_password.html")
 
 
+
+
+
 #hod taks
 
+
+
 def hod_required():
+
     if "user_id" not in session or session.get("role") != "HOD":
+
         return False
+
     return True
 
+
+
 # =========================
+
 # 🔹 Generate All Sessions (From 2022)
+
 # =========================
+
 def get_all_sessions():
+
+
 
     from datetime import datetime
 
+
+
     current_year = datetime.now().year
+
     sessions = []
 
+
+
     for year in range(2022, current_year + 1):
+
         sessions.append(f"Jan–May {year}")
+
         sessions.append(f"July–Nov {year}")
+
+
 
     return list(reversed(sessions))
 
 
+
+
+
 @app.route("/lock_marks", methods=["POST"])
+
 def lock_marks():
 
+
+
     if "user_id" not in session or session["role"] != "TEACHER":
+
         return redirect("/login")
 
+
+
     subject_id = session.get("active_subject")
+
     active_session_id = session["active_session_id"]
+
+
 
     conn = get_db_connection()
 
+
+
     # 1️⃣ Lock master evaluation
+
     conn.execute("""
+
         UPDATE evaluations
+
         SET locked = 1
+
         WHERE subject_id=? AND session_id=? AND teacher_id=?
+
     """, (subject_id, active_session_id, session["user_id"]))
 
+
+
     # 2️⃣ Get evaluation_id
+
     evaluation = conn.execute("""
+
         SELECT id, data_json
+
         FROM evaluations
+
         WHERE subject_id=? AND session_id=? AND teacher_id=?
+
         ORDER BY id DESC
+
         LIMIT 1
+
     """, (subject_id, active_session_id, session["user_id"])).fetchone()
 
+
+
     if evaluation:
+
         import json
+
         data = json.loads(evaluation["data_json"])
 
+
+
         # 3️⃣ Clear old records (if re-locking)
+
         conn.execute("""
+
             DELETE FROM evaluation_records
+
             WHERE evaluation_id=?
+
         """, (evaluation["id"],))
 
+
+
         # 4️⃣ Insert all students as locked
+
         for student in data:
+
             roll = str(student.get("University Roll Number")).strip()
 
+
+
             conn.execute("""
+
                 INSERT INTO evaluation_records
+
                 (evaluation_id, roll_no, locked)
+
                 VALUES (?, ?, 1)
+
             """, (evaluation["id"], roll))
 
+
+
     conn.commit()
+
     conn.close()
+
+
 
     return redirect("/teacher_dashboard")
 
 
+
+
+
 @app.route("/unlock_marks/<int:subject_id>")
+
 def unlock_marks(subject_id):
 
+
+
     if not hod_required():
+
         return redirect("/login")
+
+
 
     active_session_id = session["active_session_id"]
 
+
+
     conn = get_db_connection()
 
+
+
     evaluation = conn.execute("""
+
         SELECT id, data_json
+
         FROM evaluations
+
         WHERE subject_id=? AND session_id=?
+
         ORDER BY id DESC
+
         LIMIT 1
+
     """, (subject_id, active_session_id)).fetchone()
+
+
 
     conn.close()
 
+
+
     if not evaluation:
+
         return "Evaluation not found."
 
+
+
     import json
+
     data = json.loads(evaluation["data_json"])
 
+    
+
+    # Filter to show only students who gave college exam
+
+    college_students = []
+
+    for s in data:
+
+        # Check if student gave college exam
+
+        gave_college_exam = False
+
+        
+
+        # Case 1: Track is "College" or "College Evaluated"
+
+        if s.get("Track") in ["College", "College Evaluated"]:
+
+            gave_college_exam = True
+
+            
+
+        # Case 2: Has college marks (meaning they gave college exam)
+
+        elif s.get("College_External_Raw") not in [None, "", "NA"]:
+
+            gave_college_exam = True
+
+            
+
+        # Case 3: Result indicates college exam was required/taken
+
+        elif s.get("Result") in ["College Exam Required", "College Pass", "College Fail"]:
+
+            gave_college_exam = True
+
+            
+
+        if gave_college_exam:
+
+            college_students.append(s)
+
+
+
     return render_template(
+
         "unlock_options.html",
+
         evaluation_id=evaluation["id"],
+
         subject_id=subject_id,
-        students=data
+
+        students=college_students
+
     )
+
+
+
 
 
 @app.route("/complete_unlock", methods=["POST"])
+
 def complete_unlock():
 
+
+
     if not hod_required():
+
         return redirect("/login")
+
+
 
     evaluation_id = request.form.get("evaluation_id")
 
+
+
     conn = get_db_connection()
 
-    conn.execute("""
-        UPDATE evaluations
-        SET locked = 0
-        WHERE id=?
-    """, (evaluation_id,))
+
 
     conn.execute("""
-        UPDATE evaluation_records
+
+        UPDATE evaluations
+
         SET locked = 0
-        WHERE evaluation_id=?
+
+        WHERE id=?
+
     """, (evaluation_id,))
+
+
+
+    conn.execute("""
+
+        UPDATE evaluation_records
+
+        SET locked = 0
+
+        WHERE evaluation_id=?
+
+    """, (evaluation_id,))
+
+
 
     conn.commit()
+
     conn.close()
 
+
+
     return redirect("/subject_overview")
+
+
+
 
 
 @app.route("/discard_result", methods=["POST"])
+
 def discard_result():
 
+
+
     if not hod_required():
+
         return redirect("/login")
+
+
 
     subject_id = request.form.get("subject_id")
+
     active_session_id = session["active_session_id"]
 
+
+
     conn = get_db_connection()
+
+
 
     # Get evaluation id
+
     evaluation = conn.execute("""
+
         SELECT id
+
         FROM evaluations
+
         WHERE subject_id=? AND session_id=?
+
         ORDER BY id DESC
+
         LIMIT 1
+
     """, (subject_id, active_session_id)).fetchone()
 
+
+
     if evaluation:
+
         evaluation_id = evaluation["id"]
 
+
+
         # Delete student records
+
         conn.execute("""
+
             DELETE FROM evaluation_records
+
             WHERE evaluation_id=?
+
         """, (evaluation_id,))
+
+
 
         # Delete evaluation
+
         conn.execute("""
+
             DELETE FROM evaluations
+
             WHERE id=?
+
         """, (evaluation_id,))
 
+
+
     # Force clear any cached data by touching the subject record
+
     # This ensures the teacher dashboard query will see no evaluation
+
     conn.execute("""
+
         UPDATE subjects
+
         SET remark = remark  -- Dummy update to trigger any triggers
+
         WHERE id=?
+
     """, (subject_id,))
 
+
+
     conn.commit()
+
     conn.close()
 
+
+
     # Clear any session data related to this subject
+
     if session.get("active_subject") == int(subject_id):
+
         session.pop("active_subject", None)
 
+
+
     flash("Result discarded successfully. Teachers can now start fresh.", "success")
+
     
+
     # Redirect with cache-busting headers
+
     response = redirect(url_for("subject_overview"))
+
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+
     response.headers["Pragma"] = "no-cache"
+
     response.headers["Expires"] = "0"
+
     return response
 
+
+
 @app.route("/unlock_selected", methods=["POST"])
+
 def unlock_selected():
 
+
+
     if not hod_required():
+
         return redirect("/login")
 
+
+
     evaluation_id = request.form.get("evaluation_id")
+
     selected_rolls = request.form.getlist("selected_rolls")
 
+
+
     if not selected_rolls:
+
         return redirect("/hod_dashboard")
+
+
 
     conn = get_db_connection()
 
+
+
     for roll in selected_rolls:
+
         conn.execute("""
+
             UPDATE evaluation_records
+
             SET locked = 0
+
             WHERE evaluation_id=? AND roll_no=?
+
         """, (evaluation_id, roll))
 
+
+
     conn.commit()
+
     conn.close()
+
+
 
     return redirect("/subject_overview")
 
+
+
 @app.route("/edit_college_marks")
+
 @app.route("/edit_college_marks/<int:subject_id>")
+
 def edit_college_marks(subject_id=None):
+
     if "user_id" not in session or session["role"] != "TEACHER":
+
         return redirect("/login")
 
+
+
     # Use provided subject_id or get from session
+
     if subject_id:
+
         session["active_subject"] = subject_id
+
     else:
+
         subject_id = session.get("active_subject")
 
+
+
     if not subject_id:
+
         return redirect("/teacher_dashboard")
+
+
 
     active_session_id = session["active_session_id"]
 
+
+
     conn = get_db_connection()
+
+
 
     # Check current stage
+
     current_stage = conn.execute("""
+
         SELECT stage, locked
+
         FROM evaluations
+
         WHERE subject_id=? AND session_id=?
+
         ORDER BY id DESC
+
         LIMIT 1
+
     """, (subject_id, active_session_id)).fetchone()
+
+
 
     if not current_stage:
+
         conn.close()
+
         return redirect(f"/upload?subject_id={subject_id}")
+
     
+
     if current_stage["locked"] == 1:
+
         conn.close()
+
         flash("Marks are locked. Cannot edit.", "danger")
+
         return redirect(f"/evaluate?subject_id={subject_id}")
 
+
+
     evaluation = conn.execute("""
+
         SELECT id, locked, data_json
+
         FROM evaluations
+
         WHERE subject_id=? AND session_id=?
+
         ORDER BY id DESC
+
         LIMIT 1
+
     """, (subject_id, active_session_id)).fetchone()
 
+
+
     if not evaluation:
+
         conn.close()
+
         return redirect(f"/upload?subject_id={subject_id}")
 
+
+
     import json
+
     data = json.loads(evaluation["data_json"]) if evaluation["data_json"] else []
 
+    
+
+    # Check for unlocked records
+
+    unlocked_records = conn.execute("""
+
+        SELECT roll_no
+
+        FROM evaluation_records
+
+        WHERE evaluation_id=? AND locked=0
+
+    """, (evaluation["id"],)).fetchall()
+
+    
+
+    unlocked_rolls = [r["roll_no"] for r in unlocked_records]
+
+    
+
+    print(f"=== UNLOCKED ROLLS: {unlocked_rolls} ===")
+
+
+
     # DEBUG: Print all students
+
     print("=== ALL STUDENTS IN EDIT ROUTE ===")
+
     for s in data:
+
         print(f"Roll: {s.get('University Roll Number')}")
+
         print(f"  Track: {s.get('Track')}")
+
         print(f"  College_Raw: {s.get('College_External_Raw')}")
+
         print(f"  Registered: {s.get('Registered')}")
+
         print("---")
 
-    # Include ONLY students who NEED college marks (NOT ones who already have them)
+
+
+    # Include ONLY unlocked students who already have college marks
+
     college_students = []
+
     for s in data:
-        # Check if they already have college marks
-        has_college_marks = s.get("College_External_Raw") not in [None, "", "NA"]
+
+        roll = str(s.get("University Roll Number", "")).strip()
+
         
-        # Skip if they already have marks
-        if has_college_marks:
-            print(f"SKIPPING {s.get('University Roll Number')} - already has marks: {s.get('College_External_Raw')}")
+
+        # Only include if this student is unlocked
+
+        if roll not in unlocked_rolls:
+
             continue
+
             
-        # Check if they need college exam
-        needs_college = False
+
+        # Only include if they already have college marks (for editing)
+
+        has_college_marks = s.get("College_External_Raw") not in [None, "", "NA"]
+
         
-        # Case 1: Track is "College" (explicitly needs college)
-        if s.get("Track") == "College":
-            needs_college = True
-            print(f"ADDING {s.get('University Roll Number')} - Track = College")
-            
-        # Case 2: Result says College Required
-        elif s.get("Result") == "College Exam Required":
-            needs_college = True
-            print(f"ADDING {s.get('University Roll Number')} - Result = College Required")
-            
-        # Case 3: Enrolled or Not Enrolled
-        elif s.get("Registered") in ["Enrolled", "Not Enrolled"]:
-            needs_college = True
-            print(f"ADDING {s.get('University Roll Number')} - Registered = {s.get('Registered')}")
-            
-        # Case 4: Absent in NPTEL
-        elif s.get("NPTEL External Marks") == "Absent":
-            needs_college = True
-            print(f"ADDING {s.get('University Roll Number')} - NPTEL Absent")
-            
-        # Case 5: Track is None/empty and no result (like 568004, 568005)
-        elif s.get("Track") in [None, "", "None"] and s.get("Result") in [None, "", "None"]:
-            needs_college = True
-            print(f"ADDING {s.get('University Roll Number')} - No track/result")
-            
-        if needs_college:
+
+        if has_college_marks:
+
             college_students.append(s)
 
+            print(f"ADDING UNLOCKED STUDENT {roll} - has college marks: {s.get('College_External_Raw')}")
+
+        else:
+
+            print(f"SKIPPING UNLOCKED STUDENT {roll} - no college marks")
+
+
+
     conn.close()
 
-    print(f"=== FINAL COUNT: {len(college_students)} students need college marks ===")
+
+
+    print(f"=== FINAL COUNT: {len(college_students)} unlocked students with college marks ===")
+
+
 
     if not college_students:
-        flash("No students need college exam marks.", "info")
+
+        flash("No unlocked records with college marks found to edit.", "info")
+
         return redirect(url_for("evaluate", subject_id=subject_id))
 
+
+
     response = make_response(render_template(
+
         "edit_college.html",
+
         data=college_students
+
     ))
+
     response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+
     response.headers["Pragma"] = "no-cache"
+
     response.headers["Expires"] = "0"
+
     return response    
+
     
+
 @app.route("/subject_overview")
+
 def subject_overview():
+
     if not hod_required():
+
         return redirect("/login")
+
     
+
     session_label = session.get("session_label")
+
     active_session_id = session.get("active_session_id")
+
     
+
     conn = get_db_connection()
+
     
+
     # Get subjects under this HOD
+
     subjects = conn.execute("""
+
         SELECT s.*, t.name as teacher_name
+
         FROM subjects s
+
         JOIN teachers t ON s.teacher_id = t.id
+
         WHERE t.hod_id=? AND s.session_id=?
+
     """, (session["user_id"], active_session_id)).fetchall()
+
     
+
     # Get latest evaluations
+
     evaluations = conn.execute("""
+
         SELECT e.id, e.subject_id, e.stage, e.locked
+
         FROM evaluations e
+
         WHERE e.session_id=?
+
         AND e.id IN (
+
             SELECT MAX(id)
+
             FROM evaluations
+
             WHERE session_id=?
+
             GROUP BY subject_id
+
         )
+
     """, (active_session_id, active_session_id)).fetchall()
+
     
+
     eval_map = {}
+
     for ev in evaluations:
+
         eval_map[ev["subject_id"]] = ev
+
     
+
     # Build branch map
+
     branch_map = {}
+
     for sub in subjects:
+
         branch = sub["branch"] or "Unassigned"
+
         semester = sub["semester"] or "Unassigned"
+
         
+
         if branch not in branch_map:
+
             branch_map[branch] = {}
+
         if semester not in branch_map[branch]:
+
             branch_map[branch][semester] = []
+
         
+
         sub_dict = dict(sub)
+
         
+
         if sub["id"] in eval_map:
+
             ev = eval_map[sub["id"]]
+
             sub_dict["stage"] = ev["stage"]
+
             sub_dict["evaluation_id"] = ev["id"]
+
             sub_dict["locked"] = ev["locked"] or 0
+
             
+
             # Count unlocked students
+
             count = conn.execute("""
+
                 SELECT COUNT(*) as total
+
                 FROM evaluation_records
+
                 WHERE evaluation_id=? AND locked=0
+
             """, (ev["id"],)).fetchone()["total"]
+
             
+
             sub_dict["partial_unlock_count"] = count
+
         else:
+
             sub_dict["stage"] = "not_started"
+
             sub_dict["evaluation_id"] = None
+
             sub_dict["locked"] = 0
+
             sub_dict["partial_unlock_count"] = 0
+
         
+
         branch_map[branch][semester].append(sub_dict)
+
     
+
     conn.close()
+
     
+
     return render_template(
+
         "subject_overview.html",
+
         branch_map=branch_map,
+
         session_label=session_label
+
     )
+
+
+
 
 
 @app.route("/hod_dashboard")
+
 def hod_dashboard():
 
+
+
     if not hod_required():
+
         return redirect("/login")
 
+
+
     # ----------------------------
+
     # Ensure Session
+
     # ----------------------------
+
     if "session_label" not in session:
+
         session["session_label"] = get_current_session()
 
+
+
     if "active_session_id" not in session:
+
         session["active_session_id"] = get_or_create_session(
+
             session["session_label"]
+
         )
 
+
+
     session_label = session["session_label"]
+
     active_session_id = session["active_session_id"]
+
+
 
     conn = get_db_connection()
 
-    # ----------------------------
-    # HOD Info
-    # ----------------------------
-    hod = conn.execute(
-        "SELECT * FROM hods WHERE id=?",
-        (session["user_id"],)
-    ).fetchone()
+
 
     # ----------------------------
-    # Teachers
+
+    # HOD Info
+
     # ----------------------------
+
+    hod = conn.execute(
+
+        "SELECT * FROM hods WHERE id=?",
+
+        (session["user_id"],)
+
+    ).fetchone()
+
+
+
+    # ----------------------------
+
+    # Teachers
+
+    # ----------------------------
+
     teachers_raw = conn.execute("""
+
     SELECT *
+
     FROM teachers
+
     WHERE hod_id=?
+
     AND is_deactivated=0 AND is_deactivated=0
+
 """, (session["user_id"],)).fetchall()
+
+
 
     teachers = []
 
+
+
     for teacher in teachers_raw:
+
+
 
         teacher_dict = dict(teacher)
 
+
+
         teacher_subjects = conn.execute("""
+
             SELECT subject_name, subject_code
+
             FROM subjects
+
             WHERE teacher_id=? AND session_id=?
+
         """, (
+
             teacher["id"],
+
             active_session_id
+
         )).fetchall()
 
+
+
         teacher_dict["subjects"] = teacher_subjects
+
         teachers.append(teacher_dict)
 
-    # ----------------------------
-    # Subjects under this HOD
-    # ----------------------------
-    subjects = conn.execute("""
-        SELECT s.*, t.name as teacher_name
-        FROM subjects s
-        JOIN teachers t ON s.teacher_id = t.id
-        WHERE t.hod_id=? AND s.session_id=?
-    """, (
-        session["user_id"],
-        active_session_id
-    )).fetchall()
+
 
     # ----------------------------
-    # Latest Evaluations (per subject)
+
+    # Subjects under this HOD
+
     # ----------------------------
+
+    subjects = conn.execute("""
+
+        SELECT s.*, t.name as teacher_name
+
+        FROM subjects s
+
+        JOIN teachers t ON s.teacher_id = t.id
+
+        WHERE t.hod_id=? AND s.session_id=?
+
+    """, (
+
+        session["user_id"],
+
+        active_session_id
+
+    )).fetchall()
+
+
+
+    # ----------------------------
+
+    # Latest Evaluations (per subject)
+
+    # ----------------------------
+
     evaluations = conn.execute("""
+
     SELECT e.id, e.subject_id, e.stage, e.locked
+
     FROM evaluations e
+
     WHERE e.session_id=?
+
     AND e.id IN (
+
         SELECT MAX(id)
+
         FROM evaluations
+
         WHERE session_id=?
+
         GROUP BY subject_id
+
     )
+
 """, (
+
     active_session_id,
+
     active_session_id
+
 )).fetchall()
 
 
+
+
+
     # Map subject_id → evaluation row
+
     eval_map = {
+
         ev["subject_id"]: ev
+
         for ev in evaluations
+
     }
 
+
+
     # ----------------------------
+
     # Build Branch → Semester Map
+
     # ----------------------------
+
     branch_map = {}
+
+
 
     for sub in subjects:
 
+
+
         branch = sub["branch"] or "Unassigned"
+
         semester = sub["semester"] or "Unassigned"
 
+
+
         if branch not in branch_map:
+
             branch_map[branch] = {}
 
+
+
         if semester not in branch_map[branch]:
+
             branch_map[branch][semester] = []
+
+
 
         sub_dict = dict(sub)
 
+
+
         if sub["id"] in eval_map:
+
+
 
             ev = eval_map[sub["id"]]
 
+
+
             sub_dict["stage"] = ev["stage"]
+
             sub_dict["evaluation_id"] = ev["id"]
+
             sub_dict["locked"] = ev["locked"] or 0
 
+
+
             # 🔵 Partial unlock count
+
             # Count unlocked students from evaluation_records
+
             count = conn.execute("""
+
                 SELECT COUNT(*) as total
+
                 FROM evaluation_records
+
                 WHERE evaluation_id=? AND locked=0
+
             """, (ev["id"],)).fetchone()["total"]
+
+
 
             sub_dict["partial_unlock_count"] = count
 
+
+
         else:
+
             sub_dict["stage"] = "not_started"
+
             sub_dict["evaluation_id"] = None
+
             sub_dict["locked"] = 0
+
             sub_dict["partial_unlock_count"] = 0
+
+
 
         branch_map[branch][semester].append(sub_dict)
 
+
+
     # Sort semesters numerically
+
     for branch in branch_map:
+
         branch_map[branch] = dict(
+
             sorted(
+
                 branch_map[branch].items(),
+
                 key=lambda x: int(x[0]) if str(x[0]).isdigit() else 999
+
             )
+
         )
+
+
 
     all_sessions = get_all_sessions()
 
+
+
     conn.close()  # ✅ close only once at end
 
+
+
     return render_template(
+
         "hod_dashboard.html",
+
         hod=hod,
+
         teachers=teachers,
+
         branch_map=branch_map,
+
         session_label=session_label,
+
         all_sessions=all_sessions
+
     )
+
+
+
 
 
 def get_or_create_session(session_label, conn=None):
+
     close_conn = False
 
+
+
     if conn is None:
+
         conn = get_db_connection()
+
         close_conn = True
 
+
+
     existing = conn.execute(
+
         "SELECT id FROM sessions WHERE label=?",
+
         (session_label,)
+
     ).fetchone()
 
+
+
     if existing:
+
         if close_conn:
+
             conn.close()
+
         return existing["id"]
 
+
+
     conn.execute(
+
         "INSERT INTO sessions (label) VALUES (?)",
+
         (session_label,)
+
     )
 
+
+
     session_id = conn.execute(
+
         "SELECT id FROM sessions WHERE label=?",
+
         (session_label,)
+
     ).fetchone()["id"]
 
+
+
     if close_conn:
+
         conn.commit()
+
         conn.close()
+
+
 
     return session_id
 
 
+
+
+
 @app.route("/logout")
+
 def logout():
+
     session.clear()
+
     return redirect("/login")
+
+
 
 import json
 
+
+
 @app.route("/preview_evaluation/<int:eval_id>")
+
 def preview_evaluation(eval_id):
 
+
+
     if not hod_required():
+
         return redirect("/login")
+
+
 
     conn = get_db_connection()
 
+
+
     evaluation = conn.execute("""
+
         SELECT *
+
         FROM evaluations
+
         WHERE id=?
+
     """, (eval_id,)).fetchone()
 
+
+
     if not evaluation:
+
         conn.close()
+
         return "Evaluation not found."
 
+
+
     # 🔵 Count partially unlocked students
+
     unlocked_count = conn.execute("""
+
         SELECT COUNT(*) as total
+
         FROM evaluation_records
+
         WHERE evaluation_id=? AND locked=0
+
     """, (evaluation["id"],)).fetchone()["total"]
+
+
 
     conn.close()
 
+
+
     import json
+
     data = json.loads(evaluation["data_json"])
 
+
+
     final_list = []  # All students with results
+
     college_list = [] # Students needing college exam (if any)
 
+
+
     for student in data:
+
         # Re-evaluate using unified function
+
         result = calculate_final_results(student)
+
         student.update(result)
+
         
+
         college_marks = student.get("College_External_Raw")
+
         
+
         # Check if college marks have been entered
+
         if college_marks not in [None, "", "NA"]:
+
             # This student has taken college exam
+
             final_list.append(student)
+
         elif student.get("Track") in ["NPTEL", "College Evaluated"]:
+
             # This student passed through NPTEL or has been evaluated
+
             final_list.append(student)
+
         else:
+
             # This student still needs college exam
+
             college_list.append(student)
 
+
+
     # ✅ FINAL download condition
+
     can_download = (
+
         evaluation["stage"] == "college_done"
+
         and evaluation["locked"] == 1
+
         and unlocked_count == 0
+
     )
 
+
+
     return render_template(
+
         "result.html",
+
         data=final_list,           # For backward compatibility
+
         final_list=final_list,      # Students with results
+
         college_list=college_list,  # Students needing college exam
+
         stage=evaluation["stage"],
+
         evaluation_locked=(evaluation["locked"] == 1),
+
         unlocked_count=unlocked_count,
+
         can_download=can_download,
+
         evaluation_id=evaluation["id"],
+
         can_edit_college=False      # HOD cannot edit
+
     )
+
+
+
 
 
 @app.route("/assign_subject/<int:teacher_id>", methods=["GET", "POST"])
+
 def assign_subject(teacher_id):
 
+
+
     if not hod_required():
+
         return redirect("/login")
 
+
+
     # 🔹 Ensure session selected
+
     if "session_label" not in session:
+
         session["session_label"] = get_current_session()
 
+
+
     if "active_session_id" not in session:
+
         session["active_session_id"] = get_or_create_session(
+
             session["session_label"]
+
         )
+
+
 
     active_session_id = session["active_session_id"]
 
+
+
     conn = get_db_connection()
 
+
+
     # 🔹 Get teacher
+
     teacher = conn.execute(
+
         "SELECT * FROM teachers WHERE id=? AND is_deactivated=0",
+
         (teacher_id,)
+
     ).fetchone()
+
     
+
     if not teacher:
+
         conn.close()
+
         # Use flash with category for styling
+
         flash("Teacher not found or deactivated.", "error")
+
         return redirect(url_for('hod_dashboard'))
 
+
+
     # 🔹 Get current assignments for this teacher
+
     current_assignments_raw = conn.execute("""
+
         SELECT s.*, sub.subject_name 
+
         FROM subjects s
+
         JOIN subjects_master sub ON s.subject_code = sub.subject_code
+
         WHERE s.teacher_id=? AND s.session_id=?
+
         ORDER BY s.branch, s.semester, s.subject_name
+
     """, (teacher_id, active_session_id)).fetchall()
+
     
+
     # Group assignments by branch
+
     current_assignments = {}
+
     for ass in current_assignments_raw:
+
         branch = ass["branch"] or "Unassigned"
+
         if branch not in current_assignments:
+
             current_assignments[branch] = []
+
         current_assignments[branch].append(dict(ass))
 
+
+
     # 🔹 Load Branches
+
     branches = conn.execute(
+
         "SELECT * FROM branches WHERE hod_id=?",
+
         (session["user_id"],)
+
     ).fetchall()
 
+
+
     # 🔹 Load Subjects (from subjects_master)
+
     subjects = conn.execute("""
+
         SELECT id, subject_code, subject_name
+
         FROM subjects_master
+
         ORDER BY subject_code
+
     """).fetchall()
 
+
+
     # =========================
+
     # 🔴 POST → Save Assignment
+
     # =========================
+
     if request.method == "POST":
+
         subject_id = request.form.get("subject_id")
+
         semester = request.form.get("semester")
+
         section = request.form.get("section")
+
         branch = request.form.get("branch")
 
+
+
         # Validate all fields
+
         if not all([subject_id, semester, section, branch]):
+
             flash("All fields are required!", "error")
+
             conn.close()
+
             return redirect(url_for('assign_subject', teacher_id=teacher_id))
 
+
+
         try:
+
             # Get subject details
+
             subject_row = conn.execute("""
+
                 SELECT subject_code, subject_name
+
                 FROM subjects_master
+
                 WHERE id=?
+
             """, (subject_id,)).fetchone()
 
+
+
             if not subject_row:
+
                 flash("Invalid Subject Selected.", "error")
+
                 conn.close()
+
                 return redirect(url_for('assign_subject', teacher_id=teacher_id))
+
+
 
             subject_code = subject_row["subject_code"]
+
             subject_name = subject_row["subject_name"]
 
+
+
             # Check if THIS SPECIFIC SUBJECT is already assigned to this section
+
             existing = conn.execute("""
+
                 SELECT 1
+
                 FROM subjects
+
                 WHERE branch = ?
+
                 AND semester = ?
+
                 AND section = ?
+
                 AND subject_code = ?
+
                 AND session_id = ?
+
             """, (branch, semester, section, subject_code, active_session_id)).fetchone()
 
+
+
             if existing:
+
                 flash(
+
                     f"Subject {subject_code} is already assigned to {branch} Semester {semester} Section {section}!",
+
                     "error"
+
                 )
+
                 conn.close()
+
                 return redirect(url_for('assign_subject', teacher_id=teacher_id))
+
             
+
             # Insert the assignment
+
             result = conn.execute("""
+
                 INSERT INTO subjects
+
                 (subject_code, subject_name, semester, section, branch, teacher_id, session_id)
+
                 VALUES (?, ?, ?, ?, ?, ?, ?)
+
             """, (
+
                 subject_code,
+
                 subject_name,
+
                 semester,
+
                 section,
+
                 branch,
+
                 teacher_id,
+
                 active_session_id
+
             ))
 
+
+
             conn.commit()
+
             
+
             # Check if insert was successful
+
             if result.rowcount > 0:
+
                 flash(f"Subject {subject_code} assigned successfully to {teacher['name']}!", "success")
+
             else:
+
                 flash("Failed to assign subject. Please try again.", "error")
 
+
+
         except Exception as e:
+
             flash(f"Error assigning subject: {str(e)}", "error")
+
         finally:
+
             conn.close()
+
+
 
         return redirect(url_for('assign_subject', teacher_id=teacher_id))
 
+
+
     conn.close()
+
+
 
     # Semester logic
+
     session_label = session["session_label"].lower()
 
+
+
     if "jan" in session_label or "may" in session_label:
+
         semester_options = [2, 4, 6, 8]
+
     else:
+
         semester_options = [1, 3, 5, 7]
 
+
+
     return render_template(
+
         "assign_subject.html",
+
         teacher=teacher,
+
         subjects=subjects,
+
         semester_options=semester_options,
+
         branches=branches,
+
         current_assignments=current_assignments,
+
         session_label=session.get("session_label")
+
     )
+
 @app.route("/get_branch_semesters")
+
 def get_branch_semesters():
+
     branch = request.args.get("branch")
+
     session_id = session["active_session_id"]
+
     
+
     conn = get_db_connection()
+
     semesters = conn.execute("""
+
         SELECT DISTINCT semester
+
         FROM nptel_subject_mapping
+
         WHERE branch = ? AND session_id = ?
+
         ORDER BY semester
+
     """, (branch, session_id)).fetchall()
+
     conn.close()
+
     
+
     return jsonify([s["semester"] for s in semesters])
+
 #teacher dashboard
 
+
+
 @app.route("/teacher_dashboard")
+
 def teacher_dashboard():
 
+
+
     if "user_id" not in session or session["role"] != "TEACHER":
+
         return redirect("/login")
+
+
 
     conn = get_db_connection()
 
+
+
     # 🔴 Fetch full teacher row ONCE
+
     teacher = conn.execute(
+
         "SELECT * FROM teachers WHERE id=?",
+
         (session["user_id"],)
+
     ).fetchone()
 
+
+
     # Safety check
+
     if not teacher:
+
         conn.close()
+
         session.clear()
+
         return redirect("/login")
+
+
 
     # 🔴 Block deactivated teacher
+
     if teacher["is_deactivated"] == 1:
+
         conn.close()
+
         session.clear()
+
         flash("Your account is deactivated. Contact HOD.", "danger")
+
         return redirect("/login")
 
+
+
     # ---- Session Setup ----
+
     if "session_label" not in session:
+
         session["session_label"] = get_current_session()
 
+
+
     if "active_session_id" not in session:
+
         session["active_session_id"] = get_or_create_session(
+
             session["session_label"]
+
         )
 
+
+
     active_session_id = session["active_session_id"]
+
     session_label = session["session_label"]
+
  
+
     subjects = conn.execute("""
+
     SELECT *
+
     FROM subjects
+
     WHERE teacher_id=? AND session_id=?
+
 """, (
+
     session["user_id"],
+
     active_session_id
+
 )).fetchall()
 
+
+
     evaluations = conn.execute("""
+
     SELECT id, subject_id, stage, locked
+
     FROM evaluations
+
     WHERE session_id=? AND teacher_id=?
+
 """, (active_session_id, session["user_id"])).fetchall()
 
 
+
+
+
     eval_map = {}
+
     unlocked_map = {}
 
+
+
     for ev in evaluations:
+
         eval_map[ev["subject_id"]] = ev
 
+
+
         # Count unlocked records
+
         count = conn.execute("""
+
             SELECT COUNT(*) as total
+
             FROM evaluation_records
+
             WHERE evaluation_id=? AND locked=0
+
         """, (ev["id"],)).fetchone()["total"]
+
+
 
         unlocked_map[ev["subject_id"]] = count
 
+
+
     print("SUBJECT IDS:", [s["id"] for s in subjects])
+
     print("EVAL SUBJECT IDS:", [e["subject_id"] for e in evaluations])
+
     conn.close()
+
+
 
     branch_map = {}
 
+
+
     for sub in subjects:
 
+
+
         branch = sub["branch"] or "Unassigned"
+
         semester = sub["semester"] or "Unassigned"
 
+
+
         if branch not in branch_map:
+
             branch_map[branch] = {}
 
+
+
         if semester not in branch_map[branch]:
+
             branch_map[branch][semester] = []
+
+
 
         sub_dict = dict(sub)
 
+
+
         if sub["id"] in eval_map:
+
             sub_dict["stage"] = eval_map[sub["id"]]["stage"]
+
             sub_dict["evaluation_id"] = eval_map[sub["id"]]["id"]
+
             sub_dict["locked"] = eval_map[sub["id"]]["locked"]
+
             sub_dict["unlocked_count"] = unlocked_map.get(sub["id"], 0)
+
         else:
+
             sub_dict["stage"] = "not_started"
+
             sub_dict["evaluation_id"] = None
+
             sub_dict["locked"] = 0
+
+
+
 
 
         branch_map[branch][semester].append(sub_dict)
 
+
+
     return render_template(
+
     "teacher_dashboard.html",
+
     branch_map=branch_map,
+
     session_label=session_label,
+
     all_sessions=get_all_sessions(),
+
     teacher=teacher
+
 )
+
+
+
+
 
 
 
 from datetime import datetime
 
+
+
 def get_current_session():
 
+
+
     now = datetime.now()
+
     year = now.year
+
     month = now.month
 
+
+
     if month <= 5:
+
         return f"Jan–May {year}"
+
     elif month <= 11:
+
         return f"July–Nov {year}"
+
     else:
+
         return f"Jan–May {year+1}"
 
 
+
+
+
 @app.route("/manage_subjects", methods=["GET", "POST"])
+
 def manage_subjects():
+
     if not hod_required():
+
         return redirect("/login")
 
+
+
     conn = get_db_connection()
+
     hod_id = session["user_id"]  # Get current HOD's ID
 
+
+
     # -------------------------
+
     # 🔹 Manual Add
+
     # -------------------------
+
     if request.method == "POST" and "manual_add" in request.form:
+
         code = request.form.get("subject_code")
+
         name = request.form.get("subject_name")
 
+
+
         if code and name:
+
             conn.execute("""
+
                 INSERT OR IGNORE INTO subjects_master 
+
                 (subject_code, subject_name, hod_id) 
+
                 VALUES (?, ?, ?)
+
             """, (code.upper(), name, hod_id))
+
             conn.commit()
 
+
+
         conn.close()
+
         return redirect("/manage_subjects")
 
+
+
     # -------------------------
+
     # 🔹 Excel Upload
+
     # -------------------------
+
     if request.method == "POST" and "excel_upload" in request.form:
+
         file = request.files.get("file")
 
+
+
         if file and file.filename.endswith((".xlsx", ".csv")):
+
             if file.filename.endswith(".xlsx"):
+
                 df = pd.read_excel(file, engine="openpyxl")
+
             else:
+
                 df = pd.read_csv(file)
+
+
 
             df.columns = df.columns.str.strip()
 
+
+
             for _, row in df.iterrows():
+
                 code = str(row.get("subject_code", "")).strip().upper()
+
                 name = str(row.get("subject_name", "")).strip()
 
+
+
                 if code and name:
+
                     conn.execute("""
+
                         INSERT OR IGNORE INTO subjects_master 
+
                         (subject_code, subject_name, hod_id) 
+
                         VALUES (?, ?, ?)
+
                     """, (code, name, hod_id))
+
+
 
             conn.commit()
 
+
+
         conn.close()
+
         return redirect("/mark_nptel_subjects")
 
+
+
     # ==================================================
+
     # ✅ GET → SHOW SUBJECTS FOR THIS HOD ONLY
+
     # ==================================================
+
     session_id = session["active_session_id"]
 
+
+
     # Get subjects for this HOD that have NPTEL mapping
+
     subjects = conn.execute("""
+
         SELECT 
+
             nm.semester,
+
             sm.id,
+
             sm.subject_code,
+
             sm.subject_name,
+
             GROUP_CONCAT(DISTINCT nm.branch) AS branches
+
         FROM subjects_master sm
+
         LEFT JOIN nptel_subject_mapping nm ON sm.id = nm.subject_id AND nm.session_id = ?
+
         WHERE sm.hod_id = ?
+
         GROUP BY sm.id, nm.semester
+
         ORDER BY nm.semester, sm.subject_code
+
     """, (session_id, hod_id)).fetchall()
 
+
+
     conn.close()
+
     
+
     from collections import defaultdict
+
     semester_map = defaultdict(list)
 
+
+
     for row in subjects:
+
         if row["semester"]:  # Only show if semester exists (mapped)
+
             semester_map[row["semester"]].append(row)
 
+
+
     return render_template(
+
         "manage_subjects.html",
+
         semester_map=semester_map
+
     )
+
+
 
 @app.route("/delete_subject/<int:subject_id>")
+
 def delete_subject(subject_id):
+
     if not hod_required():
+
         return redirect("/login")
 
+
+
     conn = get_db_connection()
+
     hod_id = session["user_id"]
 
+
+
     # Only delete if subject belongs to this HOD
+
     conn.execute(
+
         "DELETE FROM subjects_master WHERE id=? AND hod_id=?",
+
         (subject_id, hod_id)
+
     )
 
+
+
     conn.commit()
+
     conn.close()
+
+
 
     return redirect("/manage_subjects")
 
+
+
 from flask import flash
+
 import sqlite3
 
+
+
 @app.route("/manage_branches", methods=["GET", "POST"])
+
 def manage_branches():
 
+
+
     if not hod_required():
+
         return redirect("/login")
 
+
+
     conn = get_db_connection()
+
+
 
     if request.method == "POST":
 
+
+
         branch_name = request.form.get("branch_name")
+
+
 
         if branch_name:
 
+
+
             branch_name = branch_name.strip().upper()
 
+
+
             # 🔍 Check if branch already exists for this HOD
+
             existing = conn.execute("""
+
                 SELECT id FROM branches
+
                 WHERE name=? AND hod_id=?
+
             """, (branch_name, session["user_id"])).fetchone()
 
+
+
             if existing:
+
                 flash("Branch already exists!", "danger")
+
             else:
+
                 conn.execute("""
+
                     INSERT INTO branches (name, hod_id)
+
                     VALUES (?, ?)
+
                 """, (branch_name, session["user_id"]))
+
                 conn.commit()
+
                 flash("Branch added successfully!", "success")
 
+
+
         conn.close()
+
         return redirect("/manage_branches")
 
+
+
     # 🔵 GET
+
     branches = conn.execute("""
+
         SELECT * FROM branches
+
         WHERE hod_id=?
+
         ORDER BY name
+
     """, (session["user_id"],)).fetchall()
+
+
 
     conn.close()
 
+
+
     return render_template(
+
         "manage_branches.html",
+
         branches=branches
+
     )
 
+
+
 @app.route("/delete_branch/<int:branch_id>")
+
 def delete_branch(branch_id):
 
+
+
     if not hod_required():
+
         return redirect("/login")
+
+
 
     conn = get_db_connection()
 
+
+
     try:
+
         conn.execute(
+
             "DELETE FROM branches WHERE id=? AND hod_id=?",
+
             (branch_id, session["user_id"])
+
         )
+
         conn.commit()
 
+
+
     except Exception as e:
+
         print("Delete branch error:", e)
 
+
+
     finally:
+
         conn.close()   # 🔥 ALWAYS runs
+
+
 
     return redirect("/manage_branches")
 
 
+
+
+
 @app.route("/hod_profile")
+
 def hod_profile():
 
+
+
     if not hod_required():
+
         return redirect("/login")
+
+
 
     conn = get_db_connection()
 
+
+
     # Branches
+
     branches = conn.execute(
+
         "SELECT * FROM branches WHERE hod_id=? ORDER BY name",
+
         (session["user_id"],)
+
     ).fetchall()
+
+
 
     # Subjects Master
+
     subjects = conn.execute(
+
         "SELECT * FROM subjects_master ORDER BY subject_code"
+
     ).fetchall()
 
+
+
     # Teachers
+
     teachers = conn.execute(
+
         "SELECT * FROM teachers WHERE hod_id=? ORDER BY name",
+
         (session["user_id"],)
+
     ).fetchall()
+
+
 
     conn.close()
 
+
+
     return render_template(
+
         "hod_profile.html",
+
         branches=branches,
+
         subjects=subjects,
+
         teachers=teachers
+
     )
 
+
+
 from flask import flash
+
 import sqlite3
 
+
+
 @app.route("/manage_teachers", methods=["GET", "POST"])
+
 def manage_teachers():
 
+
+
     if not hod_required():
+
         return redirect("/login")
 
+
+
     # Ensure session exists
+
     if "active_session_id" not in session:
+
         session["active_session_id"] = get_or_create_session(
+
             session["session_label"]
+
         )
 
+
+
     # =========================
+
     # 🔴 POST SECTION
+
     # =========================
+
     if request.method == "POST":
+
+
 
         conn = get_db_connection()
 
+
+
         try:
 
+
+
             # ======================
+
             # 🔹 Manual Add
+
             # ======================
+
             if "manual_add" in request.form:
 
+
+
                 name = request.form.get("name")
+
                 email = request.form.get("email")
+
+
 
                 if name and email:
 
+
+
                     temp_password = generate_password_hash("TEMP123")
 
+
+
                     try:
+
                         conn.execute("""
+
                             INSERT INTO teachers
+
                             (name, email, password, hod_id, is_active)
+
                             VALUES (?, ?, ?, ?, 0)
+
                         """, (
+
                             name.strip(),
+
                             email.strip().lower(),
+
                             temp_password,
+
                             session["user_id"]
+
                         ))
 
+
+
                         conn.commit()
+
                         flash("Teacher added successfully!", "success")
 
+
+
                     except sqlite3.IntegrityError:
+
                         conn.rollback()
+
                         flash("Email already exists!", "danger")
 
+
+
             # ======================
+
             # 🔹 Excel Upload
+
             # ======================
+
             if "excel_upload" in request.form:
+
+
 
                 file = request.files.get("file")
 
+
+
                 if file and file.filename.endswith((".xlsx", ".csv")):
 
+
+
                     if file.filename.endswith(".xlsx"):
+
                         df = pd.read_excel(file, engine="openpyxl")
+
                     else:
+
                         df = pd.read_csv(file)
+
+
 
                     df.columns = df.columns.str.strip()
 
+
+
                     duplicate_found = False
+
+
 
                     for _, row in df.iterrows():
 
+
+
                         name = str(row.get("name", "")).strip()
+
                         email = str(row.get("email", "")).strip().lower()
+
+
 
                         if name and email:
 
+
+
                             temp_password = generate_password_hash("TEMP123")
 
+
+
                             try:
+
                                 conn.execute("""
+
                                     INSERT INTO teachers
+
                                     (name, email, password, hod_id, is_active)
+
                                     VALUES (?, ?, ?, ?, 0)
+
                                 """, (
+
                                     name,
+
                                     email,
+
                                     temp_password,
+
                                     session["user_id"]
+
                                 ))
 
+
+
                             except sqlite3.IntegrityError:
+
                                 duplicate_found = True
+
                                 continue
+
+
 
                     conn.commit()
 
+
+
                     if duplicate_found:
+
                         flash("Some emails already existed and were skipped.", "danger")
+
                     else:
+
                         flash("Teachers uploaded successfully!", "success")
 
+
+
         finally:
+
             conn.close()
+
+
 
         return redirect("/manage_teachers")
 
+
+
     # =========================
+
     # 🟢 GET SECTION
+
     # =========================
+
     conn = get_db_connection()
 
+
+
     teachers = conn.execute("""
+
     SELECT DISTINCT t.*
+
     FROM teachers t
+
     WHERE t.hod_id=?
+
     ORDER BY 
+
         t.is_deactivated ASC,   -- Active (0) first, Deactivated (1) last
+
         t.name ASC
+
 """, (session["user_id"],)).fetchall()
+
+
 
     conn.close()
 
+
+
     return render_template(
+
         "manage_teachers.html",
+
         teachers=teachers,
+
         is_super_admin=session.get("is_super_admin", False)
+
     )
+
+
+
 
 
 @app.route("/toggle_deactivate/<int:teacher_id>", methods=["POST"])
+
 def toggle_deactivate(teacher_id):
 
+
+
     if not hod_required():
+
         return redirect("/login")
+
+
 
     conn = get_db_connection()
 
+
+
     teacher = conn.execute("""
+
         SELECT is_deactivated
+
         FROM teachers
+
         WHERE id=? AND hod_id=?
+
     """, (teacher_id, session["user_id"])).fetchone()
 
+
+
     if not teacher:
+
         conn.close()
+
         return redirect("/manage_teachers")
+
+
 
     new_value = 0 if teacher["is_deactivated"] == 1 else 1
 
+
+
     conn.execute("""
+
         UPDATE teachers
+
         SET is_deactivated=?
+
         WHERE id=?
+
     """, (new_value, teacher_id))
 
+
+
     conn.commit()
+
     conn.close()
+
+
 
     if new_value == 1:
+
         flash("Teacher deactivated successfully.", "danger")
+
     else:
+
         flash("Teacher activated successfully.", "success")
 
+
+
     return redirect("/manage_teachers")
+
+
 
 @app.route("/delete_teacher/<int:teacher_id>")
+
 def delete_teacher(teacher_id):
 
+
+
     if not hod_required():
+
         return redirect("/login")
+
+
 
     conn = get_db_connection()
 
+
+
     conn.execute(
+
         "DELETE FROM teachers WHERE id=? AND hod_id=?",
+
         (teacher_id, session["user_id"])
+
     )
 
+
+
     conn.commit()
+
     conn.close()
+
+
 
     return redirect("/manage_teachers")
 
+
+
 #download options 
+
 @app.route("/download_college_excel/<int:eval_id>")
+
 def download_college_excel(eval_id):
+
     if "user_id" not in session:
+
         return redirect("/login")
 
+
+
     conn = get_db_connection()
+
     evaluation = conn.execute("""
+
         SELECT data_json FROM evaluations WHERE id=?
+
     """, (eval_id,)).fetchone()
+
     
+
     # Get subject details
+
     subject = conn.execute("""
+
         SELECT * FROM subjects WHERE id=?
+
     """, (session.get("active_subject"),)).fetchone()
 
+
+
     if not evaluation:
+
         conn.close()
+
         return "Evaluation not found."
 
+
+
     import json
+
     data = json.loads(evaluation["data_json"])
 
+
+
     college_students = [
+
         s for s in data
+
         if s.get("Track") in ["College", "College Evaluated"]
+
     ]
+
+
 
     conn.close()
 
+
+
     if not college_students:
+
         return "No college students found."
+
+
 
     # Prepare data for Excel - only S.No, Roll No, Student Name
+
     excel_data = []
+
     for idx, s in enumerate(college_students, start=1):
+
         excel_data.append({
+
             "S.No": idx,
+
             "University Roll No": s.get("University Roll Number"),
+
             "Student Name": s.get("Student Name")
+
         })
 
+
+
     df = pd.DataFrame(excel_data)
+
     buffer = io.BytesIO()
+
     
+
     with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+
         df.to_excel(writer, index=False, sheet_name='College Exam List')
+
         
+
         # Get the workbook and worksheet
+
         workbook = writer.book
+
         worksheet = writer.sheets['College Exam List']
+
         
+
         # Add subject info as header
+
         if subject:
+
             worksheet.insert_rows(0, 3)
+
             worksheet['A1'] = f"Subject: {subject['subject_code']} - {subject['subject_name']}"
+
             worksheet['A2'] = f"Branch: {subject['branch']} | Semester: {subject['semester']} | Section: {subject['section']}"
+
             
+
             # Merge cells for header
+
             worksheet.merge_cells('A1:C1')
+
             worksheet.merge_cells('A2:C2')
+
             
+
             # Style header
+
             from openpyxl.styles import Font
+
             header_font = Font(bold=True)
+
             worksheet['A1'].font = header_font
+
             worksheet['A2'].font = header_font
+
         
+
         # Adjust column widths
+
         worksheet.column_dimensions['A'].width = 10
+
         worksheet.column_dimensions['B'].width = 20
+
         worksheet.column_dimensions['C'].width = 30
 
+
+
     buffer.seek(0)
 
+
+
     return send_file(
+
         buffer,
+
         as_attachment=True,
+
         download_name=f"college_exam_list_{subject['subject_code']}.xlsx"
+
     )
+
+
 
 @app.route("/download_college_pdf/<int:eval_id>")
+
 def download_college_pdf(eval_id):
+
     if "user_id" not in session:
+
         return redirect("/login")
 
+
+
     conn = get_db_connection()
+
     evaluation = conn.execute("""
+
         SELECT data_json FROM evaluations WHERE id=?
+
     """, (eval_id,)).fetchone()
+
     
+
     # Get subject details
+
     subject = conn.execute("""
+
         SELECT * FROM subjects WHERE id=?
+
     """, (session.get("active_subject"),)).fetchone()
 
+
+
     if not evaluation:
+
         conn.close()
+
         return "Evaluation not found."
 
+
+
     import json
+
     data = json.loads(evaluation["data_json"])
 
+
+
     college_students = [
+
         s for s in data
+
         if s.get("Track") in ["College", "College Evaluated"]
+
     ]
+
+
 
     conn.close()
 
+
+
     if not college_students:
+
         return "No college students found."
 
+
+
     buffer = io.BytesIO()
+
     doc = SimpleDocTemplate(buffer, pagesize=pagesizes.A4)
+
     elements = []
 
+
+
     from reportlab.platypus import Paragraph, Spacer
+
     from reportlab.lib.styles import getSampleStyleSheet
+
     from reportlab.lib.units import inch
+
     
+
     styles = getSampleStyleSheet()
+
     
+
     # Title
+
     elements.append(Paragraph("<b>College Exam Students List</b>", styles["Title"]))
+
     elements.append(Spacer(1, 0.2*inch))
+
     
+
     if subject:
+
         elements.append(Paragraph(f"<b>Subject:</b> {subject['subject_code']} - {subject['subject_name']}", styles["Normal"]))
+
         elements.append(Paragraph(f"<b>Branch:</b> {subject['branch']} | <b>Semester:</b> {subject['semester']} | <b>Section:</b> {subject['section']}", styles["Normal"]))
+
         elements.append(Spacer(1, 0.2*inch))
 
+
+
     # Table with S.No, Roll No, Name
+
     table_data = [["S.No", "University Roll No", "Student Name"]]
 
+
+
     for idx, s in enumerate(college_students, start=1):
+
         table_data.append([
+
             idx,
+
             s.get("University Roll Number"),
+
             s.get("Student Name")
+
         ])
 
+
+
     table = Table(table_data, colWidths=[0.5*inch, 1.5*inch, 3*inch])
+
     table.setStyle([
+
         ('GRID', (0,0), (-1,-1), 1, colors.black),
+
         ('BACKGROUND', (0,0), (-1,0), colors.grey),
+
         ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
+
         ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+
         ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+
     ])
+
     
+
     elements.append(table)
+
     doc.build(elements)
+
+
 
     buffer.seek(0)
 
+
+
     return send_file(
+
         buffer,
+
         as_attachment=True,
+
         download_name=f"college_exam_list_{subject['subject_code']}.pdf"
+
     )
 
+
+
 @app.route("/download_attendance_sheet/<int:eval_id>")
+
 def download_attendance_sheet(eval_id):
 
+
+
     if "user_id" not in session:
+
         return redirect("/login")
+
+
 
     conn = get_db_connection()
 
+
+
     evaluation = conn.execute("""
+
         SELECT data_json
+
         FROM evaluations
+
         WHERE id=?
+
     """, (eval_id,)).fetchone()
 
+
+
     subject = conn.execute("""
+
         SELECT * FROM subjects WHERE id=?
+
     """, (session.get("active_subject"),)).fetchone()
 
+
+
     teacher_id = session.get("user_id")
+
     teacher = conn.execute("SELECT * FROM teachers WHERE id=?", (teacher_id,)).fetchone()
 
+
+
     hod = None
+
     department = "Computer Science & Engineering"
 
+
+
     if teacher:
+
         hod = conn.execute(
+
             "SELECT * FROM hods WHERE id=?", 
+
             (teacher["hod_id"],)
+
         ).fetchone()
 
+
+
         if hod:
+
             department = hod["department"]
+
+
 
     conn.close()
 
+
+
     if not evaluation:
+
         return "Evaluation not found."
 
+
+
     import json
+
     data = json.loads(evaluation["data_json"])
 
+
+
     college_students = [
+
         s for s in data
+
         if s.get("Track") in ["College", "College Evaluated"]
+
     ]
 
+
+
     if not college_students:
+
         return "No students available."
 
+
+
     from reportlab.platypus import SimpleDocTemplate, Table, Paragraph, Spacer, Image
+
     from reportlab.lib import colors
+
     from reportlab.lib.pagesizes import A4
+
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+
     from reportlab.lib.units import inch
+
     from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
+
     import io
+
+
 
     buffer = io.BytesIO()
 
+
+
     doc = SimpleDocTemplate(
+
         buffer,
+
         pagesize=A4,
+
         topMargin=0.5*inch,
+
         bottomMargin=0.5*inch,
+
         leftMargin=0.5*inch,
+
         rightMargin=0.5*inch
+
     )
+
+
 
     elements = []
 
+
+
     styles = getSampleStyleSheet()
 
+
+
     # ⭐ TOTAL USABLE PAGE WIDTH
+
     PAGE_WIDTH = doc.width
 
+
+
     header_left = ParagraphStyle(
+
         'HeaderLeft',
+
         parent=styles['Normal'],
+
         fontSize=10,
+
         alignment=TA_LEFT
+
     )
+
+
 
     header_center = ParagraphStyle(
+
         'HeaderCenter',
+
         parent=styles['Normal'],
+
         fontSize=16,
+
         alignment=TA_CENTER,
+
         fontName='Helvetica-Bold'
+
     )
 
+
+
     header_right = ParagraphStyle(
+
         'HeaderRight',
+
         parent=styles['Normal'],
+
         fontSize=12,
+
         alignment=TA_CENTER,  # Changed to CENTER
+
         fontName='Helvetica-Bold',
+
         leading=14  # Better line spacing for department name
+
     )
+
+
 
     # ================= HEADER TABLE =================
 
+
+
     header_data = [[
+
         "",
+
         Paragraph("ATTENDANCE SHEET", header_center),
+
         Paragraph(f"Department of<br/>{department}", header_right)
+
     ]]
 
+
+
     header_table = Table(
+
         header_data,
+
         colWidths=[
+
             PAGE_WIDTH * 0.25,
+
             PAGE_WIDTH * 0.5,
+
             PAGE_WIDTH * 0.25
+
         ]
+
     )
 
+
+
     header_table.setStyle([
+
         ('ALIGN',(0,0),(0,0),'CENTER'),  # Changed to CENTER
+
         ('ALIGN',(1,0),(1,0),'CENTER'),
+
         ('ALIGN',(2,0),(2,0),'CENTER'),  # Changed to CENTER
+
         ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+
         ('BOX',(0,0),(-1,-1),1,colors.black),
+
         ('GRID',(0,0),(-1,-1),0.5,colors.black),
+
         ('LEFTPADDING',(0,0),(-1,-1),6),
+
         ('RIGHTPADDING',(0,0),(-1,-1),6),
+
         ('TOPPADDING',(0,0),(-1,-1),8),
+
         ('BOTTOMPADDING',(0,0),(-1,-1),8),
+
     ])
 
+
+
     try:
+
         logo = Image('static/agc_logo.png', width=1.5*inch, height=0.8*inch)
+
         logo.hAlign = TA_CENTER  # Center the logo in its cell
+
         header_table._cellvalues[0][0] = logo
+
     except:
+
         header_table._cellvalues[0][0] = Paragraph("COLLEGE LOGO", header_left)
 
+
+
     elements.append(header_table)
+
     elements.append(Spacer(1,0.2*inch))
+
+
+
 
 
 # ================= SUBJECT DETAILS (CLEAN ALIGNMENT) =================
 
+
+
     if subject:
 
+
+
         details_data = [
+
             [
+
                 Paragraph(f"<b>Subject Code:</b> {subject['subject_code']}", styles['Normal']),
+
                 Paragraph(f"<b>Subject Name:</b> {subject['subject_name']}", styles['Normal'])
+
             ],
+
             [
+
                 Paragraph(f"<b>Branch:</b> {subject['branch']}", styles['Normal']),
+
                 Paragraph(f"<b>Semester:</b> {subject['semester']}", styles['Normal'])
+
             ],
+
             [
+
                 Paragraph(f"<b>Section:</b> {subject['section']}", styles['Normal']),
+
                 Paragraph(f"<b>Date:</b> ", styles['Normal'])
+
             ]
+
         ]
 
+
+
         details_table = Table(
+
             details_data,
+
             colWidths=[PAGE_WIDTH/2, PAGE_WIDTH/2]
+
         )
 
+
+
         details_table.setStyle([
+
             ('ALIGN',(0,0),(-1,-1),'LEFT'),
+
             ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
 
+
+
             ('LEFTPADDING',(0,0),(-1,-1),2),
+
             ('RIGHTPADDING',(0,0),(-1,-1),2),
+
             ('TOPPADDING',(0,0),(-1,-1),2),
+
             ('BOTTOMPADDING',(0,0),(-1,-1),2),
 
+
+
             ('FONTSIZE',(0,0),(-1,-1),11),
+
         ])
 
+
+
         elements.append(details_table)
+
         elements.append(Spacer(1,0.2*inch))
+
+
 
     # ================= ATTENDANCE TABLE =================
 
+
+
     table_data = [["S.No","Roll No","Student Name","Father's Name","Signature"]]
+
+
 
     for i,s in enumerate(college_students,start=1):
 
+
+
         table_data.append([
+
             str(i),
+
             str(s.get("University Roll Number","")),
+
             str(s.get("Student Name","")),
+
             str(s.get("Father's Name","")),
+
             ""
+
         ])
 
+
+
     attendance_table = Table(
+
         table_data,
+
         colWidths=[
+
             PAGE_WIDTH * 0.08,
+
             PAGE_WIDTH * 0.18,
+
             PAGE_WIDTH * 0.30,
+
             PAGE_WIDTH * 0.22,
+
             PAGE_WIDTH * 0.22
+
         ]
+
     )
 
+
+
     attendance_table.setStyle([
+
         ('GRID',(0,0),(-1,-1),0.5,colors.black),
+
         ('BOX',(0,0),(-1,-1),1,colors.black),
+
         ('BACKGROUND',(0,0),(-1,0),colors.lightgrey),
+
         ('ALIGN',(0,0),(-1,-1),'CENTER'),
+
         ('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+
         ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
+
         ('FONTSIZE',(0,0),(-1,0),11),
+
         ('FONTSIZE',(0,1),(-1,-1),10),
+
         ('LEFTPADDING',(0,0),(-1,-1),4),
+
         ('RIGHTPADDING',(0,0),(-1,-1),4),
+
         ('TOPPADDING',(0,0),(-1,-1),8),
+
         ('BOTTOMPADDING',(0,0),(-1,-1),8),
+
     ])
+
+
 
     elements.append(attendance_table)
 
+
+
     elements.append(Spacer(1,0.4*inch))
+
+
 
     # ================= SIGNATURE TABLE =================
 
+
+
     signature_data = [
+
         ["",""],
+
         ["Teacher's Signature","HOD's Signature"]
+
     ]
 
+
+
     signature_table = Table(
+
         signature_data,
+
         colWidths=[PAGE_WIDTH/2, PAGE_WIDTH/2]
+
     )
 
+
+
     signature_table.setStyle([
+
         ('ALIGN',(0,0),(-1,-1),'CENTER'),
+
         ('LINEABOVE',(0,0),(0,0),1,colors.black),
+
         ('LINEABOVE',(1,0),(1,0),1,colors.black),
+
         ('FONTNAME',(0,1),(-1,1),'Helvetica-Bold'),
+
         ('FONTSIZE',(0,1),(-1,1),11),
+
         ('TOPPADDING',(0,0),(-1,-1),15),
+
         ('BOTTOMPADDING',(0,0),(-1,-1),5),
+
     ])
+
+
 
     elements.append(signature_table)
 
+
+
     doc.build(elements)
+
+
 
     buffer.seek(0)
 
+
+
     return send_file(
+
         buffer,
+
         as_attachment=True,
+
         download_name=f"attendance_sheet_{subject['subject_code'] if subject else 'college'}.pdf"
+
     )
 
+
+
 @app.route("/instructions")
+
 @app.route("/instructions/<int:subject_id>")
+
 def instructions(subject_id=None):
+
     """Show upload instructions page with two options"""
+
     if "user_id" not in session:
+
         return redirect("/login")
+
     
+
     if subject_id:
+
         session["active_subject"] = subject_id
+
     
+
     # Verify they have an active subject
+
     if "active_subject" not in session:
+
         return redirect("/teacher_dashboard")
+
     
+
     return render_template("instructions.html")
 
+
+
 @app.route("/edit_unlocked/<int:subject_id>", methods=["GET", "POST"])
+
 def edit_unlocked(subject_id):
 
+
+
     if "user_id" not in session or session["role"] != "TEACHER":
+
         return redirect("/login")
 
+
+
     active_session_id = session.get("active_session_id")
+
     if not active_session_id:
+
         return redirect("/teacher_dashboard")
+
+
 
     conn = get_db_connection()
 
+
+
     evaluation = conn.execute("""
+
         SELECT id, data_json
+
         FROM evaluations
+
         WHERE subject_id=? AND session_id=? AND teacher_id=?
+
         ORDER BY id DESC
+
         LIMIT 1
+
     """, (subject_id, active_session_id, session["user_id"])).fetchone()
 
+
+
     if not evaluation:
+
         conn.close()
+
         return "Evaluation not found."
 
+
+
     import json
+
     data = json.loads(evaluation["data_json"]) if evaluation["data_json"] else []
 
+
+
     records = conn.execute("""
+
         SELECT roll_no
+
         FROM evaluation_records
+
         WHERE evaluation_id=? AND locked=0
+
     """, (evaluation["id"],)).fetchall()
+
+
 
     unlocked_rolls = [r["roll_no"] for r in records]
 
-    # -----------------------
-    # GET SECTION
-    # -----------------------
-    if request.method == "GET":
-        filtered_students = [
-            s for s in data
-            if str(s.get("University Roll Number")) in unlocked_rolls
-        ]
-        conn.close()
-        return render_template(
-            "edit_unlocked.html",
-            data=filtered_students,
-            subject_id=subject_id
-        )
+
 
     # -----------------------
-    # POST SECTION - Save changes
+
+    # GET SECTION
+
     # -----------------------
+
+    if request.method == "GET":
+
+        # Filter students to show only unlocked records
+
+        filtered_students = [
+
+            s for s in data
+
+            if str(s.get("University Roll Number")) in unlocked_rolls
+
+        ]
+
+        conn.close()
+
+        return render_template(
+
+            "edit_unlocked.html",
+
+            data=filtered_students,
+
+            subject_id=subject_id
+
+        )
+
+
+
+    # -----------------------
+
+    # POST SECTION - Save college marks changes only
+
+    # -----------------------
+
     for student in data:
+
+
 
         roll = str(student.get("University Roll Number")).strip()
 
+
+
         if roll not in unlocked_rolls:
+
             continue
 
-        # -----------------------
-        # Update registration status
-        # -----------------------
-        reg_status = request.form.get(f"registered_{roll}")
-        if reg_status:
-            student["Registered"] = reg_status
+
 
         # -----------------------
-        # Update assignment marks
-        # -----------------------
-        assignment_mark = request.form.get(f"assignment_{roll}", "").strip()
 
-        if assignment_mark:
-            try:
-                mark = float(assignment_mark)
-                if 0 <= mark <= 25:
-                    student["Assignment Marks"] = mark
-            except:
-                pass
-
-        elif reg_status == "Not Enrolled":
-            student["Assignment Marks"] = "NA"
+        # Update College marks only (other fields are disabled)
 
         # -----------------------
-        # Update NPTEL marks
-        # -----------------------
-        nptel_mark = request.form.get(f"nptel_{roll}", "").strip()
 
-        if nptel_mark:
-            try:
-                mark = float(nptel_mark)
-                if 0 <= mark <= 75:
-                    student["NPTEL External Marks"] = mark
-                    student["Attendance"] = "Present"
-            except:
-                pass
-
-        elif reg_status != "Registered":
-            student["NPTEL External Marks"] = "NA"
-
-        # -----------------------
-        # Update College marks
-        # -----------------------
         college_value = request.form.get(f"college_{roll}", "").strip()
 
+
+
         if college_value.upper() == "ABSENT":
+
             student["College_External_Raw"] = "ABSENT"
 
+
+
         elif college_value:
+
             try:
+
                 mark = float(college_value)
+
                 if 0 <= mark <= 60:
+
                     student["College_External_Raw"] = mark
+
             except:
+
                 pass
 
+
+
         # -----------------------
+
         # Recalculate results
+
         # -----------------------
+
         result = calculate_final_results(student)
+
         student.update(result)
 
+
+
     # -----------------------
+
     # Save updated evaluation
+
     # -----------------------
+
     conn.execute("""
+
         UPDATE evaluations
+
         SET data_json=?,
+
             stage='college_done',
+
             locked=1,
+
             created_at=CURRENT_TIMESTAMP
+
         WHERE id=?
+
     """, (json.dumps(data), evaluation["id"]))
 
+
+
     # -----------------------
+
     # Lock all records again
+
     # -----------------------
+
     conn.execute("""
+
         UPDATE evaluation_records
+
         SET locked=1
+
         WHERE evaluation_id=?
+
     """, (evaluation["id"],))
 
+
+
     conn.commit()
+
     conn.close()
+
+
 
     return redirect(url_for("evaluate", subject_id=subject_id))
 
+
+
 @app.route("/debug_eval")
+
 def debug_eval():
 
+
+
     if "user_id" not in session:
+
         return "Not logged in"
 
+
+
     subject_id = session.get("active_subject")
+
     session_id = session.get("active_session_id")
+
+
 
     conn = get_db_connection()
 
+
+
     evaluation = conn.execute("""
+
         SELECT *
+
         FROM evaluations
+
         WHERE subject_id=? AND session_id=? AND teacher_id=?
+
         ORDER BY id DESC
+
         LIMIT 1
+
     """, (subject_id, session_id, session["user_id"])).fetchone()
+
+
 
     conn.close()
 
+
+
     if not evaluation:
+
         return "No evaluation found"
 
+
+
     import json
+
     data = json.loads(evaluation["data_json"])
 
+
+
     # 🔍 Filter by roll number from URL
+
     roll = request.args.get("roll")
 
+
+
     if roll:
+
         for student in data:
+
             if str(student.get("University Roll Number")).strip() == roll:
+
                 return f"<pre>{json.dumps(student, indent=4)}</pre>"
+
+
 
         return "Student not found."
 
+
+
     # If no roll passed → show all
+
     return f"<pre>{json.dumps(data, indent=4)}</pre>"  
 
+
+
 @app.route("/result_analysis")
+
 def result_analysis():
+
     if not hod_required():
+
         return redirect("/login")
+
     
+
     conn = get_db_connection()
+
     branches = conn.execute("SELECT name FROM branches WHERE hod_id=?", (session["user_id"],)).fetchall()
+
     conn.close()
+
     
+
     return render_template("result_analysis.html", branches=branches)
 
+
+
 @app.route("/get_subject_sections")
+
 def get_subject_sections():
+
     branch = request.args.get("branch")
+
     semester = request.args.get("semester")
+
     subject_id = request.args.get("subject_id")
+
     
+
     conn = get_db_connection()
+
     
+
     # Get subject code
+
     subject = conn.execute("SELECT subject_code FROM subjects_master WHERE id=?", (subject_id,)).fetchone()
+
     
+
     if not subject:
+
         conn.close()
+
         return jsonify([])
+
     
+
     # Get assigned sections for this subject
+
     sections = conn.execute("""
+
         SELECT DISTINCT section
+
         FROM subjects
+
         WHERE branch = ? AND semester = ? AND subject_code = ? AND session_id = ?
+
         ORDER BY section
+
     """, (branch, semester, subject["subject_code"], session["active_session_id"])).fetchall()
+
     
+
     conn.close()
+
     return jsonify([s["section"] for s in sections])
 
+
+
 @app.route("/get_result_analysis")
+
 def get_result_analysis():
+
     branch = request.args.get("branch")
+
     semester = request.args.get("semester")
+
     subject_id = request.args.get("subject_id")
+
     
+
     conn = get_db_connection()
+
     
+
     # Get subject code
+
     subject = conn.execute("SELECT subject_code FROM subjects_master WHERE id=?", (subject_id,)).fetchone()
+
     
+
     if not subject:
+
         conn.close()
+
         return jsonify({"error": "Subject not found"})
+
     
+
     # Get all sections for this subject
+
     sections_query = """
+
         SELECT DISTINCT section
+
         FROM subjects
+
         WHERE branch = ? AND semester = ? AND subject_code = ? AND session_id = ?
+
         ORDER BY section
+
     """
+
     sections = [s["section"] for s in conn.execute(sections_query, 
+
                 (branch, semester, subject["subject_code"], session["active_session_id"])).fetchall()]
+
     
+
     # Get evaluation for this subject
+
     eval_query = """
+
         SELECT e.*
+
         FROM evaluations e
+
         JOIN subjects s ON e.subject_id = s.id
+
         WHERE s.branch = ? AND s.semester = ? AND s.subject_code = ? 
+
         AND e.session_id = ? AND s.session_id = e.session_id
+
         ORDER BY e.id DESC LIMIT 1
+
     """
+
     evaluation = conn.execute(eval_query, 
+
                 (branch, semester, subject["subject_code"], session["active_session_id"])).fetchone()
+
     
+
     # Check evaluation status
+
     if not evaluation:
+
         conn.close()
+
         return jsonify({
+
             "status": "not_started",
+
             "sections": sections
+
         })
+
     
+
     if evaluation["locked"] != 1:
+
         conn.close()
+
         return jsonify({
+
             "status": "in_progress",
+
             "sections": sections
+
         })
+
     
+
     import json
+
     data = json.loads(evaluation["data_json"])
+
     
+
     # Process data for all sections and individual sections
+
     all_students = []
+
     section_students = {}
+
     section_stats = {}
+
     section_charts = {}
+
     section_top_performers = {}
+
     
+
     overall_stats = {
+
         "total": 0, "passed": 0, "failed": 0, "appeared": 0,
+
         "nptel_passed": 0, "college_passed": 0, "enrolled": 0
+
     }
+
     charts_data = {
+
         "nptel_passed": 0, "college_passed": 0, "failed": 0
+
     }
+
     
+
     for student in data:
+
         # Get section for this student (you'll need to map this properly)
+
         student_section = "1"  # Placeholder - you need actual section mapping
+
         
+
         reg_status = student.get("Registered", "")
+
         result = student.get("Result", "")
+
         track = student.get("Track", "")
+
         total = student.get("Total", 0)
+
         
+
         student_data = {
+
             "roll_no": student.get("University Roll Number", ""),
+
             "name": student.get("Student Name", ""),
+
             "section": student_section,
+
             "total": total,
+
             "result": result,
+
             "track": track
+
         }
+
         
+
         all_students.append(student_data)
+
         
+
         # Initialize section data if not exists
+
         if student_section not in section_students:
+
             section_students[student_section] = []
+
             section_stats[student_section] = {
+
                 "total": 0, "passed": 0, "failed": 0, "appeared": 0,
+
                 "nptel_passed": 0, "college_passed": 0, "enrolled": 0
+
             }
+
             section_charts[student_section] = {
+
                 "nptel_passed": 0, "college_passed": 0, "failed": 0
+
             }
+
         
+
         section_students[student_section].append(student_data)
+
         
+
         # Update counts
+
         overall_stats["total"] += 1
+
         section_stats[student_section]["total"] += 1
+
         
+
         if reg_status == "Registered":
+
             overall_stats["enrolled"] += 1
+
             section_stats[student_section]["enrolled"] += 1
+
         
+
         if result == "PASS":
+
             overall_stats["passed"] += 1
+
             section_stats[student_section]["passed"] += 1
+
             
+
             if track == "NPTEL":
+
                 overall_stats["nptel_passed"] += 1
+
                 section_stats[student_section]["nptel_passed"] += 1
+
                 charts_data["nptel_passed"] += 1
+
                 section_charts[student_section]["nptel_passed"] += 1
+
             else:
+
                 overall_stats["college_passed"] += 1
+
                 section_stats[student_section]["college_passed"] += 1
+
                 charts_data["college_passed"] += 1
+
                 section_charts[student_section]["college_passed"] += 1
+
         elif result == "FAIL":
+
             overall_stats["failed"] += 1
+
             section_stats[student_section]["failed"] += 1
+
             charts_data["failed"] += 1
+
             section_charts[student_section]["failed"] += 1
+
         
+
         # Count appeared (those who have any marks)
+
         if student.get("Assignment Marks") or student.get("NPTEL External Marks"):
+
             overall_stats["appeared"] += 1
+
             section_stats[student_section]["appeared"] += 1
+
     
+
     # Get top performers
+
     all_students.sort(key=lambda x: x["total"] if x["total"] else 0, reverse=True)
+
     top_performers = all_students[:3]
+
     
+
     # Get section-wise top performers
+
     for section, students in section_students.items():
+
         students.sort(key=lambda x: x["total"] if x["total"] else 0, reverse=True)
+
         section_top_performers[section] = students[:3]
+
     
+
     conn.close()
+
     
+
     return jsonify({
+
         "status": "completed",
+
         "sections": sections,
+
         "overall_stats": overall_stats,
+
         "charts_data": charts_data,
+
         "top_performers": top_performers,
+
         "section_stats": section_stats,
+
         "section_charts": section_charts,
+
         "section_top_performers": section_top_performers
+
     })
+
+
 
 from database import init_db
 
+
+
 init_db()
 
+
+
 if __name__ == "__main__":
+
     app.run(debug=True)
+

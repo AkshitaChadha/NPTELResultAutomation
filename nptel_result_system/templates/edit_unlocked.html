@@ -14,7 +14,8 @@
 
 {% block content %}
 <div class="container">
-    <h2 class="page-title">Edit Unlocked Students</h2>
+    <h2 class="page-title">Edit Unlocked Students - College Marks Only</h2>
+    <p style="color: #6c757d; margin-bottom: 20px;">Only college external marks can be edited for unlocked students.</p>
     
     <form method="POST" id="editForm">
         <table class="styled-table">
@@ -37,7 +38,7 @@
                     <td>
                         <select name="registered_{{ student['University Roll Number'] }}" 
                                 class="status-select" 
-                                onchange="handleStatusChange(this, '{{ student['University Roll Number'] }}')">
+                                disabled>
                             <option value="Registered" {% if student.get('Registered') == 'Registered' %}selected{% endif %}>Registered</option>
                             <option value="Enrolled" {% if student.get('Registered') == 'Enrolled' %}selected{% endif %}>Enrolled</option>
                             <option value="Not Enrolled" {% if student.get('Registered') == 'Not Enrolled' %}selected{% endif %}>Not Enrolled</option>
@@ -53,7 +54,7 @@
                                max="25"
                                step="0.01"
                                class="assignment-input"
-                               {% if student.get('Registered') == 'Not Enrolled' %}disabled{% endif %}>
+                               disabled>
                     </td>
 
                     <!-- NPTEL External -->
@@ -66,28 +67,18 @@
                                max="75"
                                step="0.01"
                                class="assignment-input"
-
-                               {% if student.get('Registered') != 'Registered'
-                                  or student.get('College_External_Raw') not in ['', None, 'NA'] %}
-                               disabled
-                               {% endif %}>
+                               disabled>
                     </td>
 
-                    <!-- College External -->
+                    <!-- College External - ONLY EDITABLE FIELD -->
                     <td>
                         <input type="text"
                                name="college_{{ student['University Roll Number'] }}"
                                id="college_{{ student['University Roll Number'] }}"
                                value="{% if student.get('College_External_Raw') == 'ABSENT' %}ABSENT{% else %}{{ student.get('College_External_Raw','') }}{% endif %}"
                                class="assignment-input college-input"
+                               style="background-color: #fff3cd; border: 2px solid #ffc107;">
 
-                               {% if student.get('College_External_Raw') in ['', None, 'NA'] %}
-                               disabled
-                               {% endif %}
-
-                               {% if student.get('College_External_Raw') == 'ABSENT' %}
-                               style="background-color:#f8d7da;color:#721c24;font-weight:500;"
-                               {% endif %}>
                     </td>
 
                 </tr>

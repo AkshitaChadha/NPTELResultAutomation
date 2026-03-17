@@ -19,21 +19,142 @@ function toggleMarks(select, roll) {
         input.value = "";
         input.disabled = true;
         input.classList.add("faded");
+        input.removeAttribute('required');
     } else {
         input.disabled = false;
         input.classList.remove("faded");
+        input.setAttribute('required', 'required');
     }
 }
 
+function validateMarks(input) {
+    const value = parseFloat(input.value);
+    const min = 0;
+    const max = 75;
+    
+    // Allow empty value (will be caught by required attribute)
+    if (input.value === "") {
+        return true;
+    }
+    
+    // Check if it's a valid number
+    if (isNaN(value)) {
+        return false;
+    }
+    
+    // Check range
+    if (value < min || value > max) {
+        return false;
+    }
+    
+    return true;
+}
+
 function moveNext(event, roll) {
+    const currentInput = document.getElementById("external_" + roll);
+    
+    // Don't validate on Enter key, just move to next
     if (event.key === "Enter") {
         event.preventDefault();
+        
+        // Only move if current input is valid (or empty with required will be handled on submit)
         const inputs = Array.from(document.querySelectorAll("input[type='number']:not(:disabled)"));
-        const current = document.getElementById("external_" + roll);
-        const index = inputs.indexOf(current);
+        const index = inputs.indexOf(currentInput);
         if (index > -1 && index < inputs.length - 1) {
             inputs[index + 1].focus();
         }
+    }
+}
+
+function validateForm() {
+    const inputs = document.querySelectorAll("input[type='number']:not(:disabled)");
+    let isValid = true;
+    
+    inputs.forEach(input => {
+        const value = parseFloat(input.value);
+        const min = 0;
+        const max = 75;
+        
+        // Check if empty (required field)
+        if (input.value === "") {
+            input.setCustomValidity("Please enter marks");
+            input.reportValidity();
+            isValid = false;
+            return;
+        }
+        
+        // Check if valid number
+        if (isNaN(value)) {
+            input.setCustomValidity("Please enter a valid number");
+            input.reportValidity();
+            isValid = false;
+            return;
+        }
+        
+        // Check range
+        if (value < min || value > max) {
+            input.setCustomValidity(`Marks must be between ${min} and ${max}`);
+            input.reportValidity();
+            isValid = false;
+            return;
+        }
+        
+        input.setCustomValidity("");
+    });
+    
+    return isValid;
+}
+
+function showConfirmModal() {
+    if (validateForm()) {
+        formToSubmit = document.getElementById('externalForm');
+        document.getElementById('confirmModal').style.display = 'flex';
+    }
+}
+
+// Disable inputs for non-Registered students
+document.addEventListener('DOMContentLoaded', function() {
+    const rows = document.querySelectorAll('tr[data-status]');
+    rows.forEach(row => {
+        const status = row.dataset.status;
+        if (status !== 'Registered') {
+            const select = row.querySelector('select');
+            const input = row.querySelector('input');
+            if (select) select.disabled = true;
+            if (input) {
+                input.disabled = true;
+                input.removeAttribute('required');
+            }
+        }
+    });
+});
+
+// Prevent back navigation
+window.history.pushState(null, null, window.location.href);
+window.onpopstate = function () {
+    window.history.go(1);
+};
+
+// Modal functions
+let formToSubmit = null;
+
+function submitForm() {
+    if (formToSubmit) {
+        formToSubmit.submit();
+    }
+    closeConfirmModal();
+}
+
+function closeConfirmModal() {
+    document.getElementById('confirmModal').style.display = 'none';
+    formToSubmit = null;
+}
+
+window.onclick = function(event) {
+    const modal = document.getElementById('confirmModal');
+    if (event.target == modal) {
+        modal.style.display = 'none';
+        formToSubmit = null;
     }
 }
 </script>
@@ -94,35 +215,39 @@ function moveNext(event, roll) {
             </td>
             
             <!-- External Marks Column -->
-            <!-- In the external marks column -->
-<td>
-    {% if row.get("Registered") == "Registered" %}
-        <input type="number"
-               id="external_{{ row.get('University Roll Number') }}"
-               name="external_{{ row.get('University Roll Number') }}"
-               value="{% if row.get('NPTEL External Marks') and row.get('NPTEL External Marks') != 'ABSENT' %}{{ row.get('NPTEL External Marks', '') }}{% endif %}"
-               min="0"
-               max="75"
-               step="0.01"
-               class="external-input"
-               onkeydown="moveNext(event, '{{ row.get('University Roll Number') }}')"
-               placeholder="0-75">
-    {% elif row.get("Registered") == "Enrolled" %}
-        <input type="text"
-               value="NA"
-               class="external-input"
-               style="background-color: #f1f5f9; text-align: center;"
-               readonly
-               disabled>
-    {% else %}
-        <input type="text"
-               value="NA"
-               class="external-input"
-               style="background-color: #f1f5f9; text-align: center;"
-               readonly
-               disabled>
-    {% endif %}
-</td>
+            <td>
+                {% if row.get("Registered") == "Registered" %}
+                    <input type="number"
+                           id="external_{{ row.get('University Roll Number') }}"
+                           name="external_{{ row.get('University Roll Number') }}"
+                           value="{% if row.get('NPTEL External Marks') and row.get('NPTEL External Marks') != 'ABSENT' %}{{ row.get('NPTEL External Marks', '') }}{% endif %}"
+                           min="0"
+                           max="75"
+                           step="0.01"
+                           class="external-input"
+                           onkeydown="moveNext(event, '{{ row.get('University Roll Number') }}')"
+                           placeholder="0-75"
+                           required>
+                {% elif row.get("Registered") == "Enrolled" %}
+                    <input type="number"
+                           value=""
+                           class="external-input"
+                           style="background-color: #f1f5f9; text-align: center;"
+                           min="0"
+                           max="75"
+                           readonly
+                           disabled>
+                {% else %}
+                    <input type="number"
+                           value=""
+                           class="external-input"
+                           style="background-color: #f1f5f9; text-align: center;"
+                           min="0"
+                           max="75"
+                           readonly
+                           disabled>
+                {% endif %}
+            </td>
         </tr>
         {% endfor %}
     </tbody>
@@ -149,55 +274,5 @@ function moveNext(event, roll) {
         </div>
     </div>
 </div>
-
-<script>
-// Prevent back navigation
-window.history.pushState(null, null, window.location.href);
-window.onpopstate = function () {
-    window.history.go(1);
-};
-
-// Modal functions
-let formToSubmit = null;
-
-function showConfirmModal() {
-    formToSubmit = document.getElementById('externalForm');
-    document.getElementById('confirmModal').style.display = 'flex';
-}
-
-function submitForm() {
-    if (formToSubmit) {
-        formToSubmit.submit();
-    }
-    closeConfirmModal();
-}
-
-function closeConfirmModal() {
-    document.getElementById('confirmModal').style.display = 'none';
-    formToSubmit = null;
-}
-
-window.onclick = function(event) {
-    const modal = document.getElementById('confirmModal');
-    if (event.target == modal) {
-        modal.style.display = 'none';
-        formToSubmit = null;
-    }
-}
-
-// Disable inputs for non-Registered students
-document.addEventListener('DOMContentLoaded', function() {
-    const rows = document.querySelectorAll('tr[data-status]');
-    rows.forEach(row => {
-        const status = row.dataset.status;
-        if (status !== 'Registered') {
-            const select = row.querySelector('select');
-            const input = row.querySelector('input');
-            if (select) select.disabled = true;
-            if (input) input.disabled = true;
-        }
-    });
-});
-</script>
 
 {% endblock %}
